@@ -14,13 +14,19 @@ struct EdgeGrid {
 
 /// Generates bezier paths for jigsaw puzzle piece edges.
 ///
-/// The classic jigsaw tab shape has three zones:
-/// 1. Flat baseline -> narrow neck
-/// 2. Neck -> rounded head (wider than neck, creating the interlock)
-/// 3. Head -> neck -> flat baseline
+/// The classic jigsaw tab is a mushroom/keyhole shape:
 ///
-/// Each tab is defined by control points in a normalised coordinate system
-/// (0,0)-(1,0) along the edge, then transformed to actual image coordinates.
+///          ___
+///         /   \      <- rounded head (wider than neck)
+///        |     |
+///         \   /
+///          | |       <- narrow neck (creates the interlock)
+///          | |
+///     _____|_|_____  <- flat edge baseline
+///
+/// The head MUST be wider than the neck for pieces to interlock.
+/// This is achieved by the bezier path sweeping outward (away from
+/// the edge centre) after passing through the narrow neck channel.
 enum BezierEdgeGenerator {
 
     // MARK: - Edge Grid Construction
@@ -29,7 +35,6 @@ enum BezierEdgeGenerator {
     static func buildEdgeGrid(rows: Int, columns: Int, seed: UInt64) -> EdgeGrid {
         var rng = SeededRNG(seed: seed)
 
-        // Horizontal edges: (rows+1) rows of (columns) edges each
         var horizontal: [[EdgeType]] = []
         for row in 0...rows {
             var rowEdges: [EdgeType] = []
@@ -43,7 +48,6 @@ enum BezierEdgeGenerator {
             horizontal.append(rowEdges)
         }
 
-        // Vertical edges: (rows) rows of (columns+1) edges each
         var vertical: [[EdgeType]] = []
         for _ in 0..<rows {
             var rowEdges: [EdgeType] = []
@@ -78,44 +82,40 @@ enum BezierEdgeGenerator {
         let bottomLeft = CGPoint(x: origin.x, y: origin.y + cellHeight)
 
         // Top edge: left to right
-        let topEdgeType = edgeGrid.horizontal[row][col]
         addEdge(
             to: &path,
             from: topLeft, to: topRight,
-            edgeType: topEdgeType,
+            edgeType: edgeGrid.horizontal[row][col],
             tabSize: tabSize,
             perpendicular: CGPoint(x: 0, y: -1),
             isFirstEdge: true
         )
 
         // Right edge: top to bottom
-        let rightEdgeType = edgeGrid.vertical[row][col + 1]
         addEdge(
             to: &path,
             from: topRight, to: bottomRight,
-            edgeType: rightEdgeType,
+            edgeType: edgeGrid.vertical[row][col + 1],
             tabSize: tabSize,
             perpendicular: CGPoint(x: 1, y: 0),
             isFirstEdge: false
         )
 
         // Bottom edge: right to left
-        let bottomEdgeType = edgeGrid.horizontal[row + 1][col]
         addEdge(
             to: &path,
             from: bottomRight, to: bottomLeft,
-            edgeType: bottomEdgeType,
+            edgeType: edgeGrid.horizontal[row + 1][col],
             tabSize: tabSize,
             perpendicular: CGPoint(x: 0, y: 1),
             isFirstEdge: false
         )
 
         // Left edge: bottom to top
-        let leftEdgeType = edgeGrid.vertical[row][col]
         addEdge(
             to: &path,
             from: bottomLeft, to: topLeft,
-            edgeType: leftEdgeType,
+            edgeType: edgeGrid.vertical[row][col],
             tabSize: tabSize,
             perpendicular: CGPoint(x: -1, y: 0),
             isFirstEdge: false
@@ -125,16 +125,22 @@ enum BezierEdgeGenerator {
         return path
     }
 
-    // MARK: - Single Edge Bezier
+    // MARK: - Classic Jigsaw Tab Shape
 
-    /// Add a single edge to the path with a classic jigsaw tab/blank shape.
+    /// Add a single edge with a classic interlocking jigsaw tab/blank shape.
     ///
-    /// The shape is built from cubic bezier curves that create:
-    /// - A narrow neck (pinch) at ~35-40% and ~60-65% of the edge
-    /// - A wide rounded head between the neck points, protruding outward
+    /// The tab profile has 6 cubic bezier segments creating this outline:
     ///
-    /// The `perpendicular` vector indicates the "outward" direction for a tab.
-    /// For blanks, the direction is inverted.
+    /// 1. Neck entry: baseline -> up through narrow neck
+    /// 2. Undercut left: neck sweeps OUTWARD to head left (wider than neck!)
+    /// 3. Head left: curves up to the peak
+    /// 4. Head right: curves down from peak
+    /// 5. Undercut right: head sweeps INWARD back to neck
+    /// 6. Neck exit: neck -> baseline
+    ///
+    /// The key feature is steps 2 and 5: the path moves away from the edge
+    /// centre after the narrow neck, making the head wider than the neck.
+    /// This creates the classic interlocking mushroom/keyhole shape.
     private static func addEdge(
         to path: inout Path,
         from start: CGPoint, to end: CGPoint,
@@ -152,85 +158,100 @@ enum BezierEdgeGenerator {
             return
         }
 
-        // Edge direction vector
+        // Edge vector
         let dx = end.x - start.x
         let dy = end.y - start.y
+        let edgeLength = sqrt(dx * dx + dy * dy)
 
-        // Sign: tab protrudes outward (+1), blank protrudes inward (-1)
+        // Tab protrudes outward (+1) for .tab, inward (-1) for .blank
         let sign: CGFloat = edgeType == .tab ? 1.0 : -1.0
 
-        // Helper: point at parametric position t along the edge, with perpendicular offset
-        func edgePoint(t: CGFloat, perp: CGFloat) -> CGPoint {
-            let offset = perp * sign
-            return CGPoint(
-                x: start.x + dx * t + perpendicular.x * offset,
-                y: start.y + dy * t + perpendicular.y * offset
+        // Point at position t along the edge with perpendicular offset p (in pixels)
+        func pt(_ t: CGFloat, _ p: CGFloat) -> CGPoint {
+            CGPoint(
+                x: start.x + dx * t + perpendicular.x * p * sign,
+                y: start.y + dy * t + perpendicular.y * p * sign
             )
         }
 
-        let tabHeight = CGFloat(tabSize) * sqrt(dx * dx + dy * dy)
+        // Tab dimensions (all in pixels, scaled from edge length)
+        let h = CGFloat(tabSize) * edgeLength  // total tab height (protrusion)
 
-        // --- Define the classic jigsaw tab profile ---
+        // --- Key shape parameters ---
         //
-        // Positions along edge (t = 0..1):
-        //   0.00        start
-        //   0.34        neck entry (where we leave the baseline)
-        //   0.38        neck narrowest (slight inward pinch)
-        //   0.42        head start (begins to widen)
-        //   0.50        head peak (max protrusion and width)
-        //   0.58        head end (symmetric to head start)
-        //   0.62        neck narrowest (symmetric)
-        //   0.66        neck exit (back to baseline)
-        //   1.00        end
+        // Neck: narrow channel from baseline up to the head
+        //   Opens at t = 0.34 and 0.66 on the baseline
+        //   Narrows to t = 0.40 and 0.60 (inner neck walls)
         //
-        // Perpendicular offsets (p, relative to tabHeight):
-        //   baseline:    0
-        //   neck inset:  -0.02 * tabHeight (slight pinch inward)
-        //   head:        tabHeight (full protrusion)
-        //   head sides:  0.8 * tabHeight
+        // Head: rounded knob, WIDER than the neck
+        //   Widens to t = 0.32 and 0.68 (wider than neck opening!)
+        //   Peak at t = 0.50
+        //
+        // Heights (perpendicular to edge):
+        //   Baseline = 0
+        //   Mid-neck = 0.20 * h
+        //   Head shoulder = 0.72 * h
+        //   Head peak = h
 
-        let neckInset = -0.02 * tabHeight  // negative = slightly inward
-        let headSide = 0.85 * tabHeight
-        let headPeak = tabHeight
+        // --- 1. Flat to neck entry ---
+        path.addLine(to: pt(0.34, 0))
 
-        // 1. Straight to neck entry
-        let neckEntry = edgePoint(t: 0.34, perp: 0)
-        path.addLine(to: neckEntry)
-
-        // 2. Curve from neck entry into the neck (slight inward pinch),
-        //    then out to the left side of the head
-        let neckNarrow1 = edgePoint(t: 0.38, perp: neckInset)
-        let headLeft = edgePoint(t: 0.36, perp: headSide)
+        // --- 2. Neck entry: from baseline, up through narrow neck ---
+        // Path goes from (0.34, 0) to (0.40, 0.20*h)
+        // Slightly curves inward then upward through the neck channel
         path.addCurve(
-            to: edgePoint(t: 0.40, perp: headSide),
-            control1: neckNarrow1,
-            control2: headLeft
+            to: pt(0.40, 0.20 * h),
+            control1: pt(0.35, 0.00),           // horizontal departure from baseline
+            control2: pt(0.40, 0.06 * h)        // guides upward into neck
         )
 
-        // 3. Curve over the head - left side to peak
+        // --- 3. Undercut left: neck sweeps outward to head ---
+        // Path goes from (0.40, 0.20*h) to (0.32, 0.72*h)
+        // This is the crucial undercut: x goes from 0.40 BACK to 0.32,
+        // making the head wider than the neck entrance at 0.34
         path.addCurve(
-            to: edgePoint(t: 0.50, perp: headPeak),
-            control1: edgePoint(t: 0.42, perp: headPeak + 0.05 * tabHeight),
-            control2: edgePoint(t: 0.46, perp: headPeak + 0.02 * tabHeight)
+            to: pt(0.32, 0.72 * h),
+            control1: pt(0.40, 0.48 * h),       // rises straight up through neck
+            control2: pt(0.27, 0.60 * h)        // sweeps outward past head edge
         )
 
-        // 4. Curve over the head - peak to right side
+        // --- 4. Head left to peak ---
+        // Path goes from (0.32, 0.72*h) to (0.50, h)
+        // Smooth curve over the left portion of the rounded head
         path.addCurve(
-            to: edgePoint(t: 0.60, perp: headSide),
-            control1: edgePoint(t: 0.54, perp: headPeak + 0.02 * tabHeight),
-            control2: edgePoint(t: 0.58, perp: headPeak + 0.05 * tabHeight)
+            to: pt(0.50, h),
+            control1: pt(0.33, 0.92 * h),       // curves up on left shoulder
+            control2: pt(0.40, h)                // rounds toward centre at peak height
         )
 
-        // 5. Curve from right head back through neck
-        let headRight = edgePoint(t: 0.64, perp: headSide)
-        let neckNarrow2 = edgePoint(t: 0.62, perp: neckInset)
+        // --- 5. Head peak to right ---
+        // Path goes from (0.50, h) to (0.68, 0.72*h)
+        // Symmetric to step 4
         path.addCurve(
-            to: edgePoint(t: 0.66, perp: 0),
-            control1: headRight,
-            control2: neckNarrow2
+            to: pt(0.68, 0.72 * h),
+            control1: pt(0.60, h),               // departs centre at peak height
+            control2: pt(0.67, 0.92 * h)         // curves down on right shoulder
         )
 
-        // 6. Straight to end
+        // --- 6. Undercut right: head sweeps inward to neck ---
+        // Path goes from (0.68, 0.72*h) to (0.60, 0.20*h)
+        // Mirror of step 3: x goes from 0.68 BACK to 0.60
+        path.addCurve(
+            to: pt(0.60, 0.20 * h),
+            control1: pt(0.73, 0.60 * h),       // sweeps outward past head edge
+            control2: pt(0.60, 0.48 * h)        // drops straight down through neck
+        )
+
+        // --- 7. Neck exit: neck back to baseline ---
+        // Path goes from (0.60, 0.20*h) to (0.66, 0)
+        // Mirror of step 2
+        path.addCurve(
+            to: pt(0.66, 0),
+            control1: pt(0.60, 0.06 * h),       // guides downward
+            control2: pt(0.65, 0.00)             // meets baseline horizontally
+        )
+
+        // --- 8. Flat to edge end ---
         path.addLine(to: end)
     }
 }

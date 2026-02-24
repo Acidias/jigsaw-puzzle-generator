@@ -62,7 +62,7 @@ struct ConfigurationPanel: View {
                             .fontWeight(.medium)
                         Slider(
                             value: $project.configuration.tabSize,
-                            in: 0.15...0.40,
+                            in: 0.20...0.45,
                             step: 0.01
                         )
                     }
