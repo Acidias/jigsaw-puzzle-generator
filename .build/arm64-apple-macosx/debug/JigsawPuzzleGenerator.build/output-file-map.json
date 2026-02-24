@@ -1,0 +1,110 @@
+{
+  "": {
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/master.swiftdeps"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/App/JigsawPuzzleGeneratorApp.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/JigsawPuzzleGeneratorApp.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/JigsawPuzzleGeneratorApp.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/JigsawPuzzleGeneratorApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/JigsawPuzzleGeneratorApp.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/JigsawPuzzleGeneratorApp.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Models/EdgeType.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/EdgeType.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/EdgeType.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/EdgeType~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/EdgeType.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/EdgeType.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Models/PuzzleConfiguration.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleConfiguration.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleConfiguration.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleConfiguration~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleConfiguration.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleConfiguration.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Models/PuzzlePiece.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzlePiece.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzlePiece.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzlePiece~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzlePiece.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzlePiece.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Models/PuzzleProject.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleProject.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleProject.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleProject~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleProject.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleProject.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Services/BezierEdgeGenerator.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/BezierEdgeGenerator.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/BezierEdgeGenerator.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/BezierEdgeGenerator~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/BezierEdgeGenerator.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/BezierEdgeGenerator.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Services/ExportService.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ExportService.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ExportService.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ExportService~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ExportService.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ExportService.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Services/ImageClipper.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageClipper.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageClipper.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageClipper~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageClipper.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageClipper.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Services/PuzzleGenerator.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleGenerator.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleGenerator.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleGenerator~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleGenerator.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleGenerator.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Views/ConfigurationPanel.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ConfigurationPanel.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ConfigurationPanel.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ConfigurationPanel~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ConfigurationPanel.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ConfigurationPanel.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Views/ContentView.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ContentView.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ContentView.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ContentView.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Views/ImageDetailView.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageDetailView.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageDetailView.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageDetailView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageDetailView.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/ImageDetailView.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Views/PieceDetailView.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PieceDetailView.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PieceDetailView.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PieceDetailView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PieceDetailView.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PieceDetailView.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Views/PuzzleOverlayView.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleOverlayView.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleOverlayView.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleOverlayView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleOverlayView.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/PuzzleOverlayView.dia"
+  },
+  "/Users/mihalydani/Local/jigsaw-puzzle-generator/Sources/Views/SidebarView.swift": {
+    "dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/SidebarView.d",
+    "object": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/SidebarView.swift.o",
+    "swiftmodule": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/SidebarView~partial.swiftmodule",
+    "swift-dependencies": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/SidebarView.swiftdeps",
+    "diagnostics": "/Users/mihalydani/Local/jigsaw-puzzle-generator/.build/arm64-apple-macosx/debug/JigsawPuzzleGenerator.build/SidebarView.dia"
+  }
+}
