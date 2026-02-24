@@ -19,13 +19,13 @@ struct ConfigurationPanel: View {
                                     get: { Double(project.configuration.columns) },
                                     set: { project.configuration.columns = Int($0) }
                                 ),
-                                in: 3...100,
+                                in: 1...100,
                                 step: 1
                             )
                             Stepper(
                                 "",
                                 value: $project.configuration.columns,
-                                in: 3...100
+                                in: 1...100
                             )
                             .labelsHidden()
                         }
@@ -41,13 +41,13 @@ struct ConfigurationPanel: View {
                                     get: { Double(project.configuration.rows) },
                                     set: { project.configuration.rows = Int($0) }
                                 ),
-                                in: 3...100,
+                                in: 1...100,
                                 step: 1
                             )
                             Stepper(
                                 "",
                                 value: $project.configuration.rows,
-                                in: 3...100
+                                in: 1...100
                             )
                             .labelsHidden()
                         }
