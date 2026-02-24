@@ -11,8 +11,8 @@ struct PuzzleOverlayView: View {
                 let cellWidth = size.width / CGFloat(config.columns)
                 let cellHeight = size.height / CGFloat(config.rows)
 
-                // Use a deterministic RNG matching the generation
-                let seed = config.seed == 0 ? UInt64(42) : config.seed
+                // Use the actual seed from generation so overlay matches pieces
+                let seed = project.generatedSeed != 0 ? project.generatedSeed : (config.seed == 0 ? UInt64(42) : config.seed)
                 let edgeGrid = BezierEdgeGenerator.buildEdgeGrid(
                     rows: config.rows,
                     columns: config.columns,

@@ -65,7 +65,7 @@ enum ExportService {
             columns: project.configuration.columns,
             rows: project.configuration.rows,
             tabSize: project.configuration.tabSize,
-            seed: project.configuration.seed,
+            seed: project.generatedSeed,
             totalPieces: project.configuration.totalPieces,
             pieces: pieces
         )

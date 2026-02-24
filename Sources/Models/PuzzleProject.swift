@@ -14,6 +14,8 @@ class PuzzleProject: ObservableObject, Identifiable {
     @Published var pieces: [PuzzlePiece] = []
     @Published var isGenerating: Bool = false
     @Published var progress: Double = 0.0
+    /// The actual seed used for the most recent generation (so overlay can match).
+    @Published var generatedSeed: UInt64 = 0
 
     /// Image dimensions for display.
     var imageWidth: Int { Int(sourceImage.size.width) }

@@ -1,6 +1,12 @@
 import AppKit
 import Foundation
 
+/// Result of puzzle generation.
+struct GenerationResult: Sendable {
+    let pieces: [PuzzlePiece]
+    let seedUsed: UInt64
+}
+
 /// Orchestrates the full puzzle generation pipeline:
 /// 1. Build edge grid (random tab/blank assignments)
 /// 2. Clip each piece from the source image
@@ -11,15 +17,14 @@ actor PuzzleGenerator {
         image: NSImage,
         configuration: PuzzleConfiguration,
         onProgress: @escaping @Sendable (Double) -> Void
-    ) async -> [PuzzlePiece] {
+    ) async -> GenerationResult {
         var config = configuration
         config.validate()
 
         let seed = config.seed == 0 ? UInt64.random(in: 1...UInt64.max) : config.seed
 
-        // Get the CGImage from NSImage
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return []
+            return GenerationResult(pieces: [], seedUsed: seed)
         }
 
         let imageSize = CGSize(
@@ -27,14 +32,12 @@ actor PuzzleGenerator {
             height: CGFloat(cgImage.height)
         )
 
-        // Build the edge grid
         let edgeGrid = BezierEdgeGenerator.buildEdgeGrid(
             rows: config.rows,
             columns: config.columns,
             seed: seed
         )
 
-        // Clip all pieces
         let clippedPieces = ImageClipper.clipAllPieces(
             from: cgImage,
             imageSize: imageSize,
@@ -45,7 +48,6 @@ actor PuzzleGenerator {
             onProgress: onProgress
         )
 
-        // Build PuzzlePiece models
         var pieces: [PuzzlePiece] = []
         for item in clippedPieces {
             let row = item.row
@@ -64,6 +66,6 @@ actor PuzzleGenerator {
             pieces.append(piece)
         }
 
-        return pieces
+        return GenerationResult(pieces: pieces, seedUsed: seed)
     }
 }

@@ -124,7 +124,7 @@ struct ConfigurationPanel: View {
             project.configuration = config
 
             let generator = PuzzleGenerator()
-            let pieces = await generator.generate(
+            let result = await generator.generate(
                 image: project.sourceImage,
                 configuration: config,
                 onProgress: { progress in
@@ -134,7 +134,8 @@ struct ConfigurationPanel: View {
                 }
             )
 
-            project.pieces = pieces
+            project.pieces = result.pieces
+            project.generatedSeed = result.seedUsed
             project.isGenerating = false
             project.progress = 1.0
         }

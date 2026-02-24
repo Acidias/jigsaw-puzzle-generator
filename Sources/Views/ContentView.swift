@@ -1,7 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @State private var isDragTargeted = false
 
     var body: some View {
         NavigationSplitView {
@@ -36,6 +38,19 @@ struct ContentView: View {
                 }
             }
         }
+        .onDrop(of: [.image, .fileURL], isTargeted: $isDragTargeted) { providers in
+            handleDrop(providers)
+        }
+        .overlay {
+            if isDragTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(style: StrokeStyle(lineWidth: 3, dash: [8]))
+                    .foregroundStyle(.blue)
+                    .background(.blue.opacity(0.05))
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func importImage() {
@@ -46,11 +61,45 @@ struct ContentView: View {
         panel.message = "Choose an image to create a jigsaw puzzle from"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let image = NSImage(contentsOf: url) else { return }
+        loadImage(from: url)
+    }
 
+    private func loadImage(from url: URL) {
+        guard let image = NSImage(contentsOf: url) else { return }
         let name = url.deletingPathExtension().lastPathComponent
         let project = PuzzleProject(name: name, sourceImage: image, sourceImageURL: url)
         appState.addProject(project)
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        for provider in providers {
+            // Try loading as a file URL first
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                    guard let data = data as? Data,
+                          let url = URL(dataRepresentation: data, relativeTo: nil)
+                    else { return }
+
+                    Task { @MainActor in
+                        loadImage(from: url)
+                    }
+                }
+                return true
+            }
+
+            // Try loading as image data
+            if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                    guard let data = data, let image = NSImage(data: data) else { return }
+                    Task { @MainActor in
+                        let project = PuzzleProject(name: "Dropped Image", sourceImage: image)
+                        appState.addProject(project)
+                    }
+                }
+                return true
+            }
+        }
+        return false
     }
 
     private func exportAll() {
@@ -82,7 +131,7 @@ struct WelcomeView: View {
             Text("Import an image to get started")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            Text("Press \u{2318}O to open an image file")
+            Text("Drag and drop an image, or press Cmd+O to open")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }
