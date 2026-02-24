@@ -37,10 +37,18 @@ def main():
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir, exist_ok=True)
 
-    # Run piecemaker
+    # Run piecemaker at full image resolution for smooth piece edges
     try:
         result = subprocess.run(
-            ["piecemaker", "--dir", temp_dir, "--number-of-pieces", str(num_pieces), image_path],
+            [
+                "piecemaker",
+                "--dir", temp_dir,
+                "--number-of-pieces", str(num_pieces),
+                "--scaled-sizes", "100",
+                "--use-max-size",
+                "--trust-image-file",
+                image_path,
+            ],
             capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout for large puzzles
@@ -61,8 +69,9 @@ def main():
         print(json.dumps({"error": "No output directory found from piecemaker"}))
         sys.exit(1)
 
-    # Use the first (usually only) size directory
-    size_dir = os.path.join(temp_dir, sorted(size_dirs)[0])
+    # Use the largest size directory for best quality
+    size_dirs.sort(key=lambda d: int(d.split("-")[1]), reverse=True)
+    size_dir = os.path.join(temp_dir, size_dirs[0])
 
     # Read piecemaker metadata
     index_path = os.path.join(temp_dir, "index.json")
