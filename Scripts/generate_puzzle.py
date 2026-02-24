@@ -11,11 +11,38 @@ Output:
 """
 
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+from PIL import Image
+
+# Minimum pixels on the longest side of the source image.
+# Small images are upscaled so bezier curves rasterise smoothly.
+MIN_LONG_SIDE = 2000
+
+
+def ensure_minimum_resolution(image_path):
+    """Upscale the image if it's too small for smooth piece edges.
+    Returns (path_to_use, needs_cleanup)."""
+    img = Image.open(image_path)
+    longest = max(img.size)
+    if longest >= MIN_LONG_SIDE:
+        return image_path, False
+
+    scale = MIN_LONG_SIDE / longest
+    new_w = int(img.size[0] * scale)
+    new_h = int(img.size[1] * scale)
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+
+    upscaled = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    img.save(upscaled.name, "PNG")
+    upscaled.close()
+    return upscaled.name, True
 
 
 def main():
@@ -30,6 +57,9 @@ def main():
     if not os.path.exists(image_path):
         print(json.dumps({"error": f"Image not found: {image_path}"}))
         sys.exit(1)
+
+    # Upscale small images so piece edges are smooth
+    actual_image, cleanup_upscaled = ensure_minimum_resolution(image_path)
 
     # piecemaker needs an empty directory
     temp_dir = output_dir + "_temp"
@@ -47,7 +77,7 @@ def main():
                 "--scaled-sizes", "100",
                 "--use-max-size",
                 "--trust-image-file",
-                image_path,
+                actual_image,
             ],
             capture_output=True,
             text=True,
@@ -157,8 +187,10 @@ def main():
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Clean up temp directory
+    # Clean up temp files
     shutil.rmtree(temp_dir, ignore_errors=True)
+    if cleanup_upscaled:
+        os.unlink(actual_image)
 
     # Print metadata to stdout for the Swift app
     print(json.dumps(metadata))
