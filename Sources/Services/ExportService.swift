@@ -20,9 +20,18 @@ enum ExportService {
                       let pngData = bitmap.representation(using: .png, properties: [:])
                 else { continue }
 
-                let filename = "piece_\(piece.row)_\(piece.col).png"
+                let filename = "piece_\(piece.pieceIndex).png"
                 let fileURL = piecesDir.appendingPathComponent(filename)
                 try pngData.write(to: fileURL)
+            }
+
+            // Export lines overlay if available
+            if let linesImage = project.linesImage,
+               let tiffData = linesImage.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let pngData = bitmap.representation(using: .png, properties: [:]) {
+                let linesURL = puzzleDir.appendingPathComponent("lines.png")
+                try pngData.write(to: linesURL)
             }
 
             // Generate metadata JSON
@@ -47,14 +56,14 @@ enum ExportService {
     private static func buildMetadata(project: PuzzleProject) -> PuzzleMetadata {
         let pieces = project.pieces.map { piece in
             PieceMetadata(
-                row: piece.row,
-                col: piece.col,
+                id: piece.pieceIndex,
                 type: piece.pieceType.rawValue,
-                topEdge: piece.topEdge.rawValue,
-                rightEdge: piece.rightEdge.rawValue,
-                bottomEdge: piece.bottomEdge.rawValue,
-                leftEdge: piece.leftEdge.rawValue,
-                filename: "piece_\(piece.row)_\(piece.col).png"
+                x1: piece.x1, y1: piece.y1,
+                x2: piece.x2, y2: piece.y2,
+                width: piece.pieceWidth,
+                height: piece.pieceHeight,
+                neighbours: piece.neighbourIDs,
+                filename: "piece_\(piece.pieceIndex).png"
             )
         }
 
@@ -62,11 +71,8 @@ enum ExportService {
             sourceName: project.name,
             sourceWidth: project.imageWidth,
             sourceHeight: project.imageHeight,
-            columns: project.configuration.columns,
-            rows: project.configuration.rows,
-            tabSize: project.configuration.tabSize,
-            seed: project.generatedSeed,
-            totalPieces: project.configuration.totalPieces,
+            requestedPieces: project.configuration.totalPieces,
+            actualPieces: project.pieces.count,
             pieces: pieces
         )
     }
@@ -78,21 +84,17 @@ struct PuzzleMetadata: Codable {
     let sourceName: String
     let sourceWidth: Int
     let sourceHeight: Int
-    let columns: Int
-    let rows: Int
-    let tabSize: Double
-    let seed: UInt64
-    let totalPieces: Int
+    let requestedPieces: Int
+    let actualPieces: Int
     let pieces: [PieceMetadata]
 }
 
 struct PieceMetadata: Codable {
-    let row: Int
-    let col: Int
+    let id: Int
     let type: String
-    let topEdge: String
-    let rightEdge: String
-    let bottomEdge: String
-    let leftEdge: String
+    let x1: Int, y1: Int, x2: Int, y2: Int
+    let width: Int
+    let height: Int
+    let neighbours: [Int]
     let filename: String
 }

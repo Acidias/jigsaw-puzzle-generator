@@ -54,40 +54,6 @@ struct ConfigurationPanel: View {
                     }
                 }
 
-                // Tab size and seed
-                HStack(spacing: 24) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Tab Size: \(Int(project.configuration.tabSize * 100))%")
-                            .font(.callout)
-                            .fontWeight(.medium)
-                        Slider(
-                            value: $project.configuration.tabSize,
-                            in: 0.20...0.45,
-                            step: 0.01
-                        )
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Seed")
-                            .font(.callout)
-                            .fontWeight(.medium)
-                        HStack {
-                            TextField(
-                                "Random",
-                                value: $project.configuration.seed,
-                                format: .number
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 120)
-
-                            Button("Randomise") {
-                                project.configuration.seed = UInt64.random(in: 1...UInt64.max)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                }
-
                 // Summary and generate button
                 HStack {
                     Text("\(project.configuration.totalPieces) pieces total")
@@ -117,6 +83,7 @@ struct ConfigurationPanel: View {
             project.isGenerating = true
             project.progress = 0.0
             project.pieces = []
+            project.linesImage = nil
             appState.selectedPieceID = nil
 
             var config = project.configuration
@@ -126,6 +93,7 @@ struct ConfigurationPanel: View {
             let generator = PuzzleGenerator()
             let result = await generator.generate(
                 image: project.sourceImage,
+                imageURL: project.sourceImageURL,
                 configuration: config,
                 onProgress: { progress in
                     Task { @MainActor in
@@ -134,8 +102,10 @@ struct ConfigurationPanel: View {
                 }
             )
 
-            project.pieces = result.pieces
-            project.generatedSeed = result.seedUsed
+            if let result = result {
+                project.pieces = result.pieces
+                project.linesImage = result.linesImage
+            }
             project.isGenerating = false
             project.progress = 1.0
         }

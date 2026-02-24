@@ -14,7 +14,6 @@ struct PieceDetailView: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: 400, maxHeight: 400)
                         .background {
-                            // Checkerboard pattern to show transparency
                             CheckerboardView()
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -29,13 +28,11 @@ struct PieceDetailView: View {
                 // Piece info
                 GroupBox("Piece Information") {
                     VStack(alignment: .leading, spacing: 12) {
-                        infoRow("Position", value: "Row \(piece.row), Column \(piece.col)")
+                        infoRow("Piece ID", value: "\(piece.pieceIndex)")
                         infoRow("Type", value: piece.pieceType.rawValue.capitalized)
                         Divider()
-                        infoRow("Top Edge", value: piece.topEdge.rawValue.capitalized)
-                        infoRow("Right Edge", value: piece.rightEdge.rawValue.capitalized)
-                        infoRow("Bottom Edge", value: piece.bottomEdge.rawValue.capitalized)
-                        infoRow("Left Edge", value: piece.leftEdge.rawValue.capitalized)
+                        infoRow("Bounding Box", value: "(\(piece.x1), \(piece.y1)) to (\(piece.x2), \(piece.y2))")
+                        infoRow("Size", value: "\(piece.pieceWidth) x \(piece.pieceHeight) px")
                         Divider()
                         infoRow("Neighbours", value: neighbourDescription())
                     }
@@ -70,23 +67,10 @@ struct PieceDetailView: View {
     }
 
     private func neighbourDescription() -> String {
-        var parts: [String] = []
-        let config = project.configuration
-
-        if piece.row > 0 {
-            parts.append("Above: (\(piece.row - 1), \(piece.col))")
+        if piece.neighbourIDs.isEmpty {
+            return "None"
         }
-        if piece.row < config.rows - 1 {
-            parts.append("Below: (\(piece.row + 1), \(piece.col))")
-        }
-        if piece.col > 0 {
-            parts.append("Left: (\(piece.row), \(piece.col - 1))")
-        }
-        if piece.col < config.columns - 1 {
-            parts.append("Right: (\(piece.row), \(piece.col + 1))")
-        }
-
-        return parts.joined(separator: ", ")
+        return piece.neighbourIDs.map { "Piece \($0)" }.joined(separator: ", ")
     }
 
     private func exportPiece() {
@@ -94,7 +78,7 @@ struct PieceDetailView: View {
 
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "piece_\(piece.row)_\(piece.col).png"
+        panel.nameFieldStringValue = "piece_\(piece.pieceIndex).png"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
