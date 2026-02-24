@@ -5,12 +5,11 @@ struct JigsawPuzzleGeneratorApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Jigsaw Puzzle Generator") {
             ContentView()
                 .environmentObject(appState)
                 .frame(minWidth: 900, minHeight: 600)
         }
-        .windowStyle(.titleBar)
         .defaultSize(width: 1200, height: 800)
     }
 }
