@@ -11,43 +11,12 @@ struct SidebarView: View {
             }
         )) {
             ForEach(appState.projects) { project in
-                DisclosureGroup {
-                    if project.hasGeneratedPieces {
-                        ForEach(project.pieces) { piece in
-                            HStack(spacing: 8) {
-                                pieceTypeIcon(piece.pieceType)
-                                Text(piece.displayLabel)
-                                    .font(.callout)
-                            }
-                            .tag(piece.id)
-                        }
-                    } else {
-                        Text("No pieces generated yet")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .italic()
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "photo")
-                            .foregroundStyle(.blue)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(project.name)
-                                .fontWeight(.medium)
-                            if project.hasGeneratedPieces {
-                                Text("\(project.pieces.count) pieces (\(project.configuration.columns)x\(project.configuration.rows))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                ProjectRow(project: project)
+                    .contextMenu {
+                        Button("Remove") {
+                            appState.removeProject(project)
                         }
                     }
-                    .tag(project.id)
-                }
-                .contextMenu {
-                    Button("Remove") {
-                        appState.removeProject(project)
-                    }
-                }
             }
         }
         .listStyle(.sidebar)
@@ -75,6 +44,59 @@ struct SidebarView: View {
                 appState.selectedPieceID = id
                 return
             }
+        }
+    }
+}
+
+/// Extracted sub-view so SwiftUI properly observes @Published changes on the project.
+private struct ProjectRow: View {
+    @ObservedObject var project: PuzzleProject
+
+    var body: some View {
+        DisclosureGroup {
+            if project.hasGeneratedPieces {
+                ForEach(project.pieces) { piece in
+                    HStack(spacing: 8) {
+                        pieceTypeIcon(piece.pieceType)
+                        Text(piece.displayLabel)
+                            .font(.callout)
+                    }
+                    .tag(piece.id)
+                }
+            } else if project.isGenerating {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Generating...")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+            } else {
+                Text("No pieces generated yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "photo")
+                    .foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name)
+                        .fontWeight(.medium)
+                    if project.hasGeneratedPieces {
+                        Text("\(project.pieces.count) pieces")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if project.isGenerating {
+                        Text("Generating... \(Int(project.progress * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .tag(project.id)
         }
     }
 

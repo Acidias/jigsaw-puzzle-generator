@@ -16,6 +16,28 @@ struct ImageDetailView: View {
                                 PuzzleOverlayView(project: project)
                             }
                         }
+
+                    // Generation overlay with progress
+                    if project.isGenerating {
+                        ZStack {
+                            Color.black.opacity(0.4)
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                    .controlSize(.large)
+                                    .tint(.white)
+                                Text("Generating puzzle...")
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                ProgressView(value: project.progress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.white)
+                                    .frame(width: 200)
+                                Text("\(Int(project.progress * 100))%")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.8))
+                            }
+                        }
+                    }
                 }
                 .frame(maxHeight: 500)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -40,18 +62,6 @@ struct ImageDetailView: View {
                 // Configuration panel
                 ConfigurationPanel(project: project)
                     .padding(.horizontal)
-
-                // Generation progress
-                if project.isGenerating {
-                    VStack(spacing: 8) {
-                        ProgressView(value: project.progress)
-                            .progressViewStyle(.linear)
-                        Text("Generating pieces... \(Int(project.progress * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal)
-                }
 
                 Spacer(minLength: 20)
             }
