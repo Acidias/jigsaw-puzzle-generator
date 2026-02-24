@@ -5,33 +5,33 @@ import SwiftUI
 /// Holds the randomly-assigned edge types for the entire puzzle grid.
 struct EdgeGrid {
     /// Horizontal edges: [row][col] where row 0..rows, col 0..cols-1
-    /// Row 0 = top border, Row rows = bottom border
     let horizontal: [[EdgeType]]
     /// Vertical edges: [row][col] where row 0..rows-1, col 0..cols
-    /// Col 0 = left border, Col cols = right border
     let vertical: [[EdgeType]]
 }
 
 /// Generates bezier paths for jigsaw puzzle piece edges.
 ///
-/// The classic jigsaw tab is a mushroom/keyhole shape:
+/// Each tab is a mushroom/keyhole shape with 4 tangent-continuous cubic bezier
+/// curves. All dimensions scale proportionally with the tab height (h), so the
+/// shape remains consistent across different tabSize values.
 ///
-///          ___
-///         /   \      <- rounded head (wider than neck)
-///        |     |
-///         \   /
-///          | |       <- narrow neck (creates the interlock)
-///          | |
-///     _____|_|_____  <- flat edge baseline
+/// Cross-section of one tab (looking at it from the side):
 ///
-/// The head MUST be wider than the neck for pieces to interlock.
-/// This is achieved by the bezier path sweeping outward (away from
-/// the edge centre) after passing through the narrow neck channel.
+///            _____
+///          /       \          <- smooth circular head
+///         |         |
+///          \       /
+///           |     |           <- narrow neck (undercut!)
+///           |     |
+///     ______|     |______     <- flat edge baseline
+///
+/// The head (width = 0.80h) is much wider than the neck (width = 0.40h),
+/// creating the classic interlocking jigsaw shape.
 enum BezierEdgeGenerator {
 
     // MARK: - Edge Grid Construction
 
-    /// Build the full edge grid with random tab/blank assignments.
     static func buildEdgeGrid(rows: Int, columns: Int, seed: UInt64) -> EdgeGrid {
         var rng = SeededRNG(seed: seed)
 
@@ -66,7 +66,6 @@ enum BezierEdgeGenerator {
 
     // MARK: - Piece Path
 
-    /// Construct the full closed path for a single piece.
     static func piecePath(
         row: Int, col: Int,
         cellWidth: CGFloat, cellHeight: CGFloat,
@@ -81,66 +80,42 @@ enum BezierEdgeGenerator {
         let bottomRight = CGPoint(x: origin.x + cellWidth, y: origin.y + cellHeight)
         let bottomLeft = CGPoint(x: origin.x, y: origin.y + cellHeight)
 
-        // Top edge: left to right
-        addEdge(
-            to: &path,
-            from: topLeft, to: topRight,
-            edgeType: edgeGrid.horizontal[row][col],
-            tabSize: tabSize,
-            perpendicular: CGPoint(x: 0, y: -1),
-            isFirstEdge: true
-        )
+        addEdge(to: &path, from: topLeft, to: topRight,
+                edgeType: edgeGrid.horizontal[row][col],
+                tabSize: tabSize, perpendicular: CGPoint(x: 0, y: -1), isFirstEdge: true)
 
-        // Right edge: top to bottom
-        addEdge(
-            to: &path,
-            from: topRight, to: bottomRight,
-            edgeType: edgeGrid.vertical[row][col + 1],
-            tabSize: tabSize,
-            perpendicular: CGPoint(x: 1, y: 0),
-            isFirstEdge: false
-        )
+        addEdge(to: &path, from: topRight, to: bottomRight,
+                edgeType: edgeGrid.vertical[row][col + 1],
+                tabSize: tabSize, perpendicular: CGPoint(x: 1, y: 0), isFirstEdge: false)
 
-        // Bottom edge: right to left
-        addEdge(
-            to: &path,
-            from: bottomRight, to: bottomLeft,
-            edgeType: edgeGrid.horizontal[row + 1][col],
-            tabSize: tabSize,
-            perpendicular: CGPoint(x: 0, y: 1),
-            isFirstEdge: false
-        )
+        addEdge(to: &path, from: bottomRight, to: bottomLeft,
+                edgeType: edgeGrid.horizontal[row + 1][col],
+                tabSize: tabSize, perpendicular: CGPoint(x: 0, y: 1), isFirstEdge: false)
 
-        // Left edge: bottom to top
-        addEdge(
-            to: &path,
-            from: bottomLeft, to: topLeft,
-            edgeType: edgeGrid.vertical[row][col],
-            tabSize: tabSize,
-            perpendicular: CGPoint(x: -1, y: 0),
-            isFirstEdge: false
-        )
+        addEdge(to: &path, from: bottomLeft, to: topLeft,
+                edgeType: edgeGrid.vertical[row][col],
+                tabSize: tabSize, perpendicular: CGPoint(x: -1, y: 0), isFirstEdge: false)
 
         path.closeSubpath()
         return path
     }
 
-    // MARK: - Classic Jigsaw Tab Shape
+    // MARK: - Classic Jigsaw Tab
 
-    /// Add a single edge with a classic interlocking jigsaw tab/blank shape.
+    /// Draws one edge with a classic jigsaw tab or blank shape.
     ///
-    /// The tab profile has 6 cubic bezier segments creating this outline:
+    /// The shape uses 4 cubic bezier curves with tangent continuity at every
+    /// junction, producing smooth, organic curves like a real die-cut jigsaw.
     ///
-    /// 1. Neck entry: baseline -> up through narrow neck
-    /// 2. Undercut left: neck sweeps OUTWARD to head left (wider than neck!)
-    /// 3. Head left: curves up to the peak
-    /// 4. Head right: curves down from peak
-    /// 5. Undercut right: head sweeps INWARD back to neck
-    /// 6. Neck exit: neck -> baseline
+    /// All dimensions are proportional to `h` (tab height), so the shape
+    /// scales uniformly and stays circular/round at any tabSize value.
     ///
-    /// The key feature is steps 2 and 5: the path moves away from the edge
-    /// centre after the narrow neck, making the head wider than the neck.
-    /// This creates the classic interlocking mushroom/keyhole shape.
+    /// Shape proportions (relative to h):
+    /// - Neck half-width along edge: 0.20h
+    /// - Head half-width along edge: 0.40h (2x wider than neck = strong interlock)
+    /// - Neck rises to: 0.30h
+    /// - Head widest at: 0.72h
+    /// - Head peak at: h
     private static func addEdge(
         to path: inout Path,
         from start: CGPoint, to end: CGPoint,
@@ -158,15 +133,15 @@ enum BezierEdgeGenerator {
             return
         }
 
-        // Edge vector
         let dx = end.x - start.x
         let dy = end.y - start.y
-        let edgeLength = sqrt(dx * dx + dy * dy)
-
-        // Tab protrudes outward (+1) for .tab, inward (-1) for .blank
+        let edgeLen = sqrt(dx * dx + dy * dy)
         let sign: CGFloat = edgeType == .tab ? 1.0 : -1.0
 
-        // Point at position t along the edge with perpendicular offset p (in pixels)
+        // Tab height in pixels
+        let h = CGFloat(tabSize) * edgeLen
+
+        // Point at (t fraction along edge, p pixels perpendicular)
         func pt(_ t: CGFloat, _ p: CGFloat) -> CGPoint {
             CGPoint(
                 x: start.x + dx * t + perpendicular.x * p * sign,
@@ -174,91 +149,81 @@ enum BezierEdgeGenerator {
             )
         }
 
-        // Tab dimensions (all in pixels, scaled from edge length)
-        let h = CGFloat(tabSize) * edgeLength  // total tab height (protrusion)
-
-        // --- Key shape parameters ---
+        // --- Shape dimensions (all proportional to h) ---
         //
-        // Neck: narrow channel from baseline up to the head
-        //   Opens at t = 0.34 and 0.66 on the baseline
-        //   Narrows to t = 0.40 and 0.60 (inner neck walls)
-        //
-        // Head: rounded knob, WIDER than the neck
-        //   Widens to t = 0.32 and 0.68 (wider than neck opening!)
-        //   Peak at t = 0.50
-        //
-        // Heights (perpendicular to edge):
-        //   Baseline = 0
-        //   Mid-neck = 0.20 * h
-        //   Head shoulder = 0.72 * h
-        //   Head peak = h
+        // Along-edge half-widths (as fractions of edge length):
+        let neckDt = 0.20 * h / edgeLen    // neck half-width
+        let headDt = 0.40 * h / edgeLen    // head half-width (2x neck!)
+        let sweepDt = 0.52 * h / edgeLen   // sweep CP extends past head
 
-        // --- 1. Flat to neck entry ---
-        path.addLine(to: pt(0.34, 0))
+        // Key t positions (along edge):
+        let nL = 0.50 - neckDt      // left neck entrance
+        let nR = 0.50 + neckDt      // right neck entrance
+        let hL = 0.50 - headDt      // left head widest
+        let hR = 0.50 + headDt      // right head widest
+        let sL = 0.50 - sweepDt     // left sweep CP (past head)
+        let sR = 0.50 + sweepDt     // right sweep CP
 
-        // --- 2. Neck entry: from baseline, up through narrow neck ---
-        // Path goes from (0.34, 0) to (0.40, 0.20*h)
-        // Slightly curves inward then upward through the neck channel
+        // Tangent alignment at head junction points:
+        // Arrival tangent at head-left: direction from (sL, 0.50h) to (hL, 0.72h)
+        //   dt = sweepDt - headDt = 0.12h/edgeLen
+        //   dp = 0.22h
+        // We scale this by 0.6 for the departure CP of curve 2:
+        let tangentDt = 0.12 * h / edgeLen * 0.6
+        let tangentDp = 0.22 * h * 0.6
+        // CP for rounding the head peak:
+        let peakCpDt = 0.17 * h / edgeLen
+
+        // ================================================
+        // The 4 curves (tangent-continuous at all junctions)
+        // ================================================
+
+        // --- Flat to neck ---
+        path.addLine(to: pt(nL, 0))
+
+        // --- Curve 1: Left neck + undercut sweep to head-left ---
+        // Goes from baseline, UP through narrow neck, then sweeps OUT to wide head.
+        // The sweep CP (sL) extends past the head edge, pulling the curve outward.
         path.addCurve(
-            to: pt(0.40, 0.20 * h),
-            control1: pt(0.35, 0.00),           // horizontal departure from baseline
-            control2: pt(0.40, 0.06 * h)        // guides upward into neck
+            to: pt(hL, 0.72 * h),                // head widest left
+            control1: pt(nL, 0.30 * h),           // straight up through neck
+            control2: pt(sL, 0.50 * h)            // sweeps far outward past head
         )
 
-        // --- 3. Undercut left: neck sweeps outward to head ---
-        // Path goes from (0.40, 0.20*h) to (0.32, 0.72*h)
-        // This is the crucial undercut: x goes from 0.40 BACK to 0.32,
-        // making the head wider than the neck entrance at 0.34
+        // --- Curve 2: Head-left to peak ---
+        // Smoothly rounds over the left portion of the head.
+        // CP1 is tangent-aligned with curve 1's arrival direction.
+        // CP2 arrives at peak horizontally (for smooth peak).
         path.addCurve(
-            to: pt(0.32, 0.72 * h),
-            control1: pt(0.40, 0.48 * h),       // rises straight up through neck
-            control2: pt(0.27, 0.60 * h)        // sweeps outward past head edge
+            to: pt(0.50, h),                      // peak centre
+            control1: pt(hL + tangentDt, 0.72 * h + tangentDp),  // tangent-aligned
+            control2: pt(0.50 - peakCpDt, h)      // approaches peak horizontally
         )
 
-        // --- 4. Head left to peak ---
-        // Path goes from (0.32, 0.72*h) to (0.50, h)
-        // Smooth curve over the left portion of the rounded head
+        // --- Curve 3: Peak to head-right ---
+        // Mirror of curve 2. Departs peak horizontally.
+        // CP2 is tangent-aligned with curve 4's departure direction.
         path.addCurve(
-            to: pt(0.50, h),
-            control1: pt(0.33, 0.92 * h),       // curves up on left shoulder
-            control2: pt(0.40, h)                // rounds toward centre at peak height
+            to: pt(hR, 0.72 * h),                 // head widest right
+            control1: pt(0.50 + peakCpDt, h),      // departs peak horizontally
+            control2: pt(hR - tangentDt, 0.72 * h + tangentDp)   // tangent-aligned
         )
 
-        // --- 5. Head peak to right ---
-        // Path goes from (0.50, h) to (0.68, 0.72*h)
-        // Symmetric to step 4
+        // --- Curve 4: Head-right + undercut sweep to right neck ---
+        // Mirror of curve 1. Sweeps from wide head back through narrow neck.
         path.addCurve(
-            to: pt(0.68, 0.72 * h),
-            control1: pt(0.60, h),               // departs centre at peak height
-            control2: pt(0.67, 0.92 * h)         // curves down on right shoulder
+            to: pt(nR, 0),                        // right neck entrance (baseline)
+            control1: pt(sR, 0.50 * h),           // sweeps far outward past head
+            control2: pt(nR, 0.30 * h)            // straight down through neck
         )
 
-        // --- 6. Undercut right: head sweeps inward to neck ---
-        // Path goes from (0.68, 0.72*h) to (0.60, 0.20*h)
-        // Mirror of step 3: x goes from 0.68 BACK to 0.60
-        path.addCurve(
-            to: pt(0.60, 0.20 * h),
-            control1: pt(0.73, 0.60 * h),       // sweeps outward past head edge
-            control2: pt(0.60, 0.48 * h)        // drops straight down through neck
-        )
-
-        // --- 7. Neck exit: neck back to baseline ---
-        // Path goes from (0.60, 0.20*h) to (0.66, 0)
-        // Mirror of step 2
-        path.addCurve(
-            to: pt(0.66, 0),
-            control1: pt(0.60, 0.06 * h),       // guides downward
-            control2: pt(0.65, 0.00)             // meets baseline horizontally
-        )
-
-        // --- 8. Flat to edge end ---
+        // --- Flat to end ---
         path.addLine(to: end)
     }
 }
 
 // MARK: - Seeded Random Number Generator
 
-/// A simple seeded RNG (xorshift64) for reproducible puzzle generation.
 struct SeededRNG: RandomNumberGenerator {
     private var state: UInt64
 
