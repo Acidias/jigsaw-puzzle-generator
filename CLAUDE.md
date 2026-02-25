@@ -10,8 +10,8 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 
 ## Project Structure
 - `Sources/App/` - App entry point and global state (AppState)
-- `Sources/Models/` - Data models (PuzzlePiece, PuzzleConfiguration, PuzzleProject)
-- `Sources/Views/` - SwiftUI views (sidebar tree, image detail, piece detail, config panel, puzzle overlay)
+- `Sources/Models/` - Data models (PuzzlePiece, PuzzleConfiguration, PuzzleProject, BatchState)
+- `Sources/Views/` - SwiftUI views (sidebar tree, image detail, piece detail, config panel, puzzle overlay, batch processing)
 - `Sources/Services/`
   - `PuzzleGenerator` - Orchestrates native puzzle generation, returns Result<GenerationResult, GenerationError>
   - `ExportService` - Exports pieces as PNGs with metadata JSON
@@ -32,3 +32,4 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 - Adjacency computed from grid position (trivial on a regular grid)
 - Temp output directories cleaned up on re-generation and project removal
 - Export copies PNG files from disk instead of re-encoding (falls back to NSImage for lines overlay)
+- Batch processing: select multiple images, process all with shared grid settings, per-item and overall progress, skip/fail handling, optional auto-export (Cmd+Shift+B or toolbar button)

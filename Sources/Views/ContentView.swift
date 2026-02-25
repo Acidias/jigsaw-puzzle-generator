@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
     @State private var isDragTargeted = false
     @State private var errorMessage: String?
     @State private var showErrorAlert = false
@@ -29,6 +30,12 @@ struct ContentView: View {
                     Label("Import Image", systemImage: "photo.badge.plus")
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                Button {
+                    openWindow(id: "batch")
+                } label: {
+                    Label("Batch Process", systemImage: "rectangle.stack.badge.play")
+                }
 
                 if let project = appState.selectedProject, project.hasGeneratedPieces {
                     Button {
