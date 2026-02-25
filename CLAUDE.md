@@ -10,11 +10,12 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 
 ## Project Structure
 - `Sources/App/` - App entry point and global state (AppState)
-- `Sources/Models/` - Data models (PuzzlePiece, PuzzleConfiguration, PuzzleProject, BatchState)
+- `Sources/Models/` - Data models (PuzzlePiece, PuzzleConfiguration, PuzzleProject, BatchState, ImageAttribution)
 - `Sources/Views/` - SwiftUI views (sidebar tree, image detail, piece detail, config panel, puzzle overlay, batch processing)
 - `Sources/Services/`
   - `PuzzleGenerator` - Orchestrates native puzzle generation, returns Result<GenerationResult, GenerationError>
-  - `ExportService` - Exports pieces as PNGs with metadata JSON
+  - `ExportService` - Exports pieces as PNGs with metadata JSON (includes attribution when sourced from Openverse)
+  - `OpenverseAPI` - Openverse image search API client (search, download, attribution)
   - `PuzzleEngine/` - Native jigsaw piece generation engine:
     - `EdgePath` - Bezier curve generation for jigsaw edges (4 cubic curves per edge)
     - `PiecePathBuilder` - Builds closed CGPath outlines per piece from shared grid edges
@@ -33,3 +34,4 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 - Temp output directories cleaned up on re-generation and project removal
 - Export copies PNG files from disk instead of re-encoding (falls back to NSImage for lines overlay)
 - Batch processing: select multiple images, process all with shared grid settings, per-item and overall progress, skip/fail handling, optional auto-export (Cmd+Shift+B or toolbar button)
+- Openverse integration: search Creative Commons images from the batch window, filter by size/category, download selected images into batch queue with licence/attribution preserved through to export metadata JSON

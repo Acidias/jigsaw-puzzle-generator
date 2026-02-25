@@ -26,15 +26,18 @@ class BatchItem: ObservableObject, Identifiable {
     let sourceImageURL: URL?
     let imageWidth: Int
     let imageHeight: Int
+    /// Attribution and licence info (non-nil for Openverse images).
+    let attribution: ImageAttribution?
 
     @Published var status: BatchItemStatus = .pending
     /// Populated after successful generation.
     var project: PuzzleProject?
 
-    init(name: String, sourceImage: NSImage, sourceImageURL: URL?) {
+    init(name: String, sourceImage: NSImage, sourceImageURL: URL?, attribution: ImageAttribution? = nil) {
         self.name = name
         self.sourceImage = sourceImage
         self.sourceImageURL = sourceImageURL
+        self.attribution = attribution
 
         // Get pixel dimensions (not point dimensions)
         if let rep = sourceImage.representations.first, rep.pixelsWide > 0 {
@@ -125,6 +128,16 @@ class BatchState: ObservableObject {
         }
     }
 
+    func addOpenverseImage(name: String, image: NSImage, imageURL: URL?, attribution: ImageAttribution) {
+        let item = BatchItem(
+            name: name,
+            sourceImage: image,
+            sourceImageURL: imageURL,
+            attribution: attribution
+        )
+        items.append(item)
+    }
+
     func clearAll() {
         cleanup()
         items.removeAll()
@@ -182,6 +195,7 @@ class BatchState: ObservableObject {
                         sourceImageURL: item.sourceImageURL
                     )
                     project.configuration = config
+                    project.attribution = item.attribution
                     project.pieces = generation.pieces
                     project.linesImage = generation.linesImage
                     project.outputDirectory = generation.outputDirectory

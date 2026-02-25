@@ -113,7 +113,8 @@ enum ExportService {
             sourceHeight: project.imageHeight,
             requestedPieces: project.configuration.totalPieces,
             actualPieces: project.pieces.count,
-            pieces: pieces
+            pieces: pieces,
+            attribution: project.attribution
         )
     }
 }
@@ -127,6 +128,7 @@ struct PuzzleMetadata: Codable {
     let requestedPieces: Int
     let actualPieces: Int
     let pieces: [PieceMetadata]
+    let attribution: ImageAttribution?
 }
 
 struct PieceMetadata: Codable {

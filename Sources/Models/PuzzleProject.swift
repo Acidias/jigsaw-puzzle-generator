@@ -20,6 +20,8 @@ class PuzzleProject: ObservableObject, Identifiable {
     @Published var lastError: String?
     /// Path to the output directory for this generation.
     var outputDirectory: URL?
+    /// Attribution and licence info (non-nil for Openverse images).
+    var attribution: ImageAttribution?
 
     /// Image dimensions in pixels (not points) for accurate metadata.
     var imageWidth: Int {

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct BatchProcessingView: View {
     @StateObject private var batchState = BatchState()
     @State private var isDragTargeted = false
+    @State private var showOpenverseSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,11 +25,14 @@ struct BatchProcessingView: View {
                 if !batchState.items.isEmpty {
                     BatchProgressBar(batchState: batchState)
                 }
-                BatchControls(batchState: batchState)
+                BatchControls(batchState: batchState, showOpenverseSheet: $showOpenverseSheet)
             }
             .padding()
         }
         .frame(minWidth: 600, minHeight: 500)
+        .sheet(isPresented: $showOpenverseSheet) {
+            OpenverseSearchSheet(batchState: batchState)
+        }
     }
 }
 
@@ -314,12 +318,18 @@ private struct BatchProgressBar: View {
 
 private struct BatchControls: View {
     @ObservedObject var batchState: BatchState
+    @Binding var showOpenverseSheet: Bool
 
     var body: some View {
         HStack {
             // Choose and clear buttons
             Button("Choose Images...") {
                 chooseImages()
+            }
+            .disabled(batchState.isRunning)
+
+            Button("Search Openverse...") {
+                showOpenverseSheet = true
             }
             .disabled(batchState.isRunning)
 
