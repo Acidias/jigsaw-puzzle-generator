@@ -19,13 +19,16 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
   - `PuzzlePiece` - Individual puzzle piece with bounding box and image path
   - `PuzzleConfiguration` - Grid size config (rows/columns)
   - `BatchState` - Batch processing queue and logic
-  - `DatasetState` - ML dataset generation state (config, status, categories, splits)
+  - `DatasetState` - ML dataset generation state (config, status, categories, splits, persisted datasets list)
+  - `PuzzleDataset` - Persisted dataset entity (independent top-level, references source project by ID)
+  - `DatasetManifest` - Codable DTO for dataset JSON persistence
   - `ImageAttribution` - Openverse licence/creator info
   - `ProjectManifest` - Codable DTOs for JSON persistence (ProjectManifest, ImageManifest, CutManifest, CutImageResultManifest, PieceManifest)
 - `Sources/Views/` - SwiftUI views (four-level sidebar tree, project/cut/cutImage/piece detail, config panel, puzzle overlay, batch processing, Openverse search, dataset generation)
 - `Sources/Services/`
   - `PuzzleGenerator` - Orchestrates native puzzle generation, returns Result<GenerationResult, GenerationError>. Accepts optional `gridEdges:` to reuse shared edges across images.
-  - `DatasetGenerator` - Generates structured ML training datasets from 2-piece puzzles (4 categories, train/test/valid splits)
+  - `DatasetGenerator` - Generates structured ML training datasets from 2-piece puzzles (4 categories, train/test/valid splits), persists to internal storage
+  - `DatasetStore` - Persistence layer for datasets: save/load/delete/export to ~/Library/Application Support/JigsawPuzzleGenerator/datasets/
   - `ExportService` - Exports pieces as PNGs with metadata JSON (includes attribution when sourced from Openverse)
   - `OpenverseAPI` - Openverse image search API client (search, download, attribution)
   - `ProjectStore` - Persistence layer: saves/loads projects to ~/Library/Application Support/JigsawPuzzleGenerator/
@@ -39,7 +42,7 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 ## Key Concepts
 - **Project hierarchy**: Projects group multiple images. Cuts are project-level and apply to all images at once. Four-level sidebar: Project > Cut (e.g. "5x5") > CutImageResult (per image) > Pieces. Source images visible only in the project detail view.
 - **Persistence**: Projects saved as manifest.json + files in ~/Library/Application Support/JigsawPuzzleGenerator/projects/<uuid>/. Source images copied permanently, piece PNGs moved from temp to permanent storage after generation. Survives app restart.
-- **Disk layout**: `projects/<project-uuid>/manifest.json` + `images/<image-uuid>/source.<ext>` + `cuts/<cut-uuid>/<image-uuid>/pieces/*.png` + `lines.png`
+- **Disk layout**: `projects/<project-uuid>/manifest.json` + `images/<image-uuid>/source.<ext>` + `cuts/<cut-uuid>/<image-uuid>/pieces/*.png` + `lines.png`. Datasets: `datasets/<dataset-uuid>/manifest.json` + `{train,test,valid}/<category>/pair_NNNN_{left,right}.png` + `labels.csv`
 - Jigsaw shapes generated natively using CGPath cubic bezier curves (port of piecemaker's interlocking nubs algorithm)
 - Each edge has 4 bezier segments with randomised control points for natural-looking tabs/blanks
 - Adjacent pieces share edge curves (one traverses forward, the other reversed) for perfect interlocking
@@ -51,4 +54,4 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 - Export copies PNG files from disk instead of re-encoding (falls back to NSImage for lines overlay)
 - Batch processing: select multiple local images, creates a single project-level cut with CutImageResult per batch item, per-item and overall progress, skip/fail handling, optional auto-export
 - Openverse integration: search Creative Commons images, filter by size/category/licence type/max results (20-500), download selected images directly into a project (existing or new) with licence/attribution preserved through to export metadata JSON
-- **Dataset generation**: generates ML training datasets from 2-piece (1x2) jigsaw puzzles. Four pair categories: correct (matching shape+image), wrong shape match (same edges, different image), wrong image match (same image, different edges), wrong nothing (different both). Image-level train/test/valid split prevents data leakage. Shared GridEdges enable shape-match pairs across images. Output: train/test/valid dirs with category subdirs, labels.csv per split, metadata.json.
+- **Dataset generation**: generates ML training datasets from 2-piece (1x2) jigsaw puzzles. Four pair categories: correct (matching shape+image), wrong shape match (same edges, different image), wrong image match (same image, different edges), wrong nothing (different both). Image-level train/test/valid split prevents data leakage. Shared GridEdges enable shape-match pairs across images. Datasets are persisted as first-class entities in internal storage (independent of source project, survive project deletion). Can be exported to external directories. Visible in sidebar under "AI Tools" with detail view showing config and split/category counts.

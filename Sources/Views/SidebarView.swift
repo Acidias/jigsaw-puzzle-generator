@@ -4,6 +4,7 @@ enum SidebarItem: Hashable {
     case batchLocal
     case batchOpenverse
     case datasetGeneration
+    case dataset(UUID)
     case project(UUID)
     case cut(UUID)
     case cutImage(UUID)
@@ -12,6 +13,7 @@ enum SidebarItem: Hashable {
 
 struct SidebarView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject var datasetState: DatasetState
     @Binding var selection: SidebarItem?
 
     var body: some View {
@@ -26,6 +28,37 @@ struct SidebarView: View {
             Section("AI Tools") {
                 Label("Dataset Generation", systemImage: "brain")
                     .tag(SidebarItem.datasetGeneration)
+
+                ForEach(datasetState.datasets) { dataset in
+                    HStack(spacing: 8) {
+                        Image(systemName: "brain.filled.head.profile")
+                            .foregroundStyle(.purple)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(dataset.name)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Text("\(dataset.totalPairs) pairs")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tag(SidebarItem.dataset(dataset.id))
+                    .contextMenu {
+                        Button("Rename...") {
+                            promptRenameDataset(dataset)
+                        }
+                        Button("Export...") {
+                            exportDataset(dataset)
+                        }
+                        Divider()
+                        Button("Delete") {
+                            datasetState.deleteDataset(dataset)
+                            if case .dataset(dataset.id) = selection {
+                                selection = .datasetGeneration
+                            }
+                        }
+                    }
+                }
             }
 
             Section("Projects") {
@@ -43,7 +76,7 @@ struct SidebarView: View {
 
     private func handleSelection(_ item: SidebarItem?) {
         switch item {
-        case .batchLocal, .batchOpenverse, .datasetGeneration:
+        case .batchLocal, .batchOpenverse, .datasetGeneration, .dataset:
             appState.selectedProjectID = nil
             appState.selectedCutID = nil
             appState.selectedCutImageID = nil
@@ -87,6 +120,43 @@ struct SidebarView: View {
         }
     }
 
+    private func promptRenameDataset(_ dataset: PuzzleDataset) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Dataset"
+        alert.informativeText = "Enter a new name for the dataset."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        textField.stringValue = dataset.name
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                dataset.name = newName
+                DatasetStore.saveDataset(dataset)
+            }
+        }
+    }
+
+    private func exportDataset(_ dataset: PuzzleDataset) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder to export the dataset"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try DatasetStore.exportDataset(dataset, to: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Export Failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
 }
 
 /// Project row: Project > Cuts > CutImageResults > Pieces.

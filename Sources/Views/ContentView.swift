@@ -21,7 +21,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selection: $sidebarSelection)
+            SidebarView(datasetState: datasetState, selection: $sidebarSelection)
         } detail: {
             VStack(spacing: 0) {
                 Group {
@@ -32,6 +32,10 @@ struct ContentView: View {
                         OpenversePanel(state: openverseState)
                     case .datasetGeneration:
                         DatasetGenerationPanel(datasetState: datasetState)
+                    case .dataset(let id):
+                        if let dataset = datasetState.datasets.first(where: { $0.id == id }) {
+                            DatasetDetailView(dataset: dataset, datasetState: datasetState)
+                        }
                     default:
                         projectDetailView
                     }
@@ -159,6 +163,9 @@ struct ContentView: View {
             } else if let cutID = appState.selectedCutID {
                 sidebarSelection = .cut(cutID)
             }
+        }
+        .task {
+            datasetState.loadDatasets()
         }
     }
 

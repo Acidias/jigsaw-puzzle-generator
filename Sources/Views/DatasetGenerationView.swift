@@ -42,15 +42,17 @@ struct DatasetGenerationPanel: View {
                 // Split ratios
                 splitRatiosSection
 
-                // Output directory
-                outputDirectorySection
-
                 // Generate button + progress
                 generateSection
 
                 // Log viewer
                 if !datasetState.logMessages.isEmpty {
                     logSection
+                }
+
+                // Persisted datasets
+                if !datasetState.datasets.isEmpty {
+                    datasetsListSection
                 }
 
                 Spacer(minLength: 20)
@@ -299,30 +301,6 @@ struct DatasetGenerationPanel: View {
         }
     }
 
-    private var outputDirectorySection: some View {
-        GroupBox("Output Directory") {
-            HStack {
-                if let dir = datasetState.configuration.outputDirectory {
-                    Text(dir.path)
-                        .font(.callout)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("No directory selected")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .italic()
-                }
-                Spacer()
-                Button("Choose...") {
-                    chooseOutputDirectory()
-                }
-            }
-            .padding(8)
-        }
-    }
-
     private var generateSection: some View {
         VStack(spacing: 12) {
             if case .generating(let phase, let progress) = datasetState.status {
@@ -381,7 +359,6 @@ struct DatasetGenerationPanel: View {
 
     private var canGenerate: Bool {
         guard selectedProject != nil,
-              datasetState.configuration.outputDirectory != nil,
               !datasetState.isRunning else { return false }
 
         let sum = datasetState.configuration.trainRatio
@@ -389,27 +366,268 @@ struct DatasetGenerationPanel: View {
             + datasetState.configuration.validRatio
         guard abs(sum - 1.0) < 0.01 else { return false }
 
-        // Check minimum image count
         if imageCount < 1 { return false }
 
         return true
-    }
-
-    private func chooseOutputDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.message = "Choose a folder for the dataset output"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        datasetState.configuration.outputDirectory = url
     }
 
     private func startGeneration() {
         guard let project = selectedProject else { return }
         Task {
             await DatasetGenerator.generate(state: datasetState, project: project)
+        }
+    }
+
+    private var datasetsListSection: some View {
+        GroupBox("Datasets") {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(datasetState.datasets) { dataset in
+                    DatasetRowView(dataset: dataset, datasetState: datasetState)
+                }
+            }
+            .padding(8)
+        }
+    }
+}
+
+// MARK: - Dataset Row
+
+private struct DatasetRowView: View {
+    @ObservedObject var dataset: PuzzleDataset
+    @ObservedObject var datasetState: DatasetState
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(dataset.name)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                Text("\(dataset.totalPairs) pairs - \(Self.dateFormatter.string(from: dataset.createdAt))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(dataset.sourceProjectName)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Rename...") {
+                promptRename()
+            }
+            Button("Export...") {
+                exportDataset()
+            }
+            Divider()
+            Button("Delete", role: .destructive) {
+                datasetState.deleteDataset(dataset)
+            }
+        }
+    }
+
+    private func promptRename() {
+        let alert = NSAlert()
+        alert.messageText = "Rename Dataset"
+        alert.informativeText = "Enter a new name for the dataset."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        textField.stringValue = dataset.name
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                dataset.name = newName
+                DatasetStore.saveDataset(dataset)
+            }
+        }
+    }
+
+    private func exportDataset() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder to export the dataset"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try DatasetStore.exportDataset(dataset, to: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Export Failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+}
+
+// MARK: - Dataset Detail View
+
+struct DatasetDetailView: View {
+    @ObservedObject var dataset: PuzzleDataset
+    @ObservedObject var datasetState: DatasetState
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        f.timeStyle = .medium
+        return f
+    }()
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "brain.filled.head.profile")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.purple)
+                    Text(dataset.name)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Text("Source: \(dataset.sourceProjectName)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text(Self.dateFormatter.string(from: dataset.createdAt))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 8)
+
+                // Summary
+                GroupBox("Summary") {
+                    VStack(spacing: 8) {
+                        summaryRow("Total pairs", value: "\(dataset.totalPairs)")
+                        summaryRow("Piece size", value: "\(dataset.configuration.pieceSize) px")
+                        let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
+                        summaryRow("Canvas size", value: "\(canvasSize) x \(canvasSize) px")
+                        summaryRow("Fill", value: dataset.configuration.pieceFill.rawValue)
+                        summaryRow("Cuts per image", value: "\(dataset.configuration.cutsPerImage)")
+                    }
+                    .padding(8)
+                }
+
+                // Split breakdown
+                GroupBox("Split Breakdown") {
+                    VStack(spacing: 12) {
+                        ForEach(DatasetSplit.allCases, id: \.rawValue) { split in
+                            splitSection(split)
+                        }
+                    }
+                    .padding(8)
+                }
+
+                // Requested vs actual
+                GroupBox("Requested Counts") {
+                    VStack(spacing: 4) {
+                        requestedRow("Correct", count: dataset.configuration.correctCount)
+                        requestedRow("Shape match", count: dataset.configuration.wrongShapeMatchCount)
+                        requestedRow("Image match", count: dataset.configuration.wrongImageMatchCount)
+                        requestedRow("Nothing", count: dataset.configuration.wrongNothingCount)
+                    }
+                    .padding(8)
+                }
+
+                // Actions
+                HStack(spacing: 12) {
+                    Button {
+                        exportDataset()
+                    } label: {
+                        Label("Export...", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button(role: .destructive) {
+                        datasetState.deleteDataset(dataset)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+
+                Spacer(minLength: 20)
+            }
+            .padding()
+        }
+    }
+
+    private func summaryRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.callout)
+                .fontWeight(.medium)
+        }
+    }
+
+    private func splitSection(_ split: DatasetSplit) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            let catCounts = dataset.splitCounts[split] ?? [:]
+            let splitTotal = catCounts.values.reduce(0, +)
+
+            HStack {
+                Text(split.rawValue.capitalized)
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("\(splitTotal) pairs")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(DatasetCategory.allCases, id: \.rawValue) { category in
+                HStack {
+                    Text("  \(category.displayName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(catCounts[category] ?? 0)")
+                        .font(.caption.monospacedDigit())
+                }
+            }
+        }
+    }
+
+    private func requestedRow(_ label: String, count: Int) -> some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .frame(width: 100, alignment: .leading)
+            Spacer()
+            Text("\(count)")
+                .font(.caption.monospacedDigit())
+        }
+    }
+
+    private func exportDataset() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder to export the dataset"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try DatasetStore.exportDataset(dataset, to: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Export Failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
         }
     }
 }

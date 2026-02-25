@@ -4,7 +4,6 @@ import Foundation
 /// Errors during dataset generation.
 enum DatasetError: Error, LocalizedError {
     case noProject
-    case noOutputDirectory
     case insufficientImages(needed: Int, have: Int)
     case insufficientCuts(needed: Int, have: Int)
     case poolTooSmall(category: DatasetCategory, requested: Int, available: Int)
@@ -15,8 +14,6 @@ enum DatasetError: Error, LocalizedError {
         switch self {
         case .noProject:
             return "No project selected."
-        case .noOutputDirectory:
-            return "No output directory selected."
         case .insufficientImages(let needed, let have):
             return "Need at least \(needed) images, but the project has \(have)."
         case .insufficientCuts(let needed, let have):
@@ -53,8 +50,15 @@ enum DatasetGenerator {
             state.status = .failed(reason: DatasetError.insufficientCuts(needed: 2, have: config.cutsPerImage).localizedDescription)
             return
         }
-        guard let outputDir = config.outputDirectory else {
-            state.status = .failed(reason: DatasetError.noOutputDirectory.localizedDescription)
+
+        // Allocate a dataset ID and output directory in internal storage
+        let datasetID = UUID()
+        let outputDir = DatasetStore.datasetDirectory(for: datasetID)
+
+        do {
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        } catch {
+            state.status = .failed(reason: "Failed to create dataset directory: \(error.localizedDescription)")
             return
         }
 
@@ -308,10 +312,10 @@ enum DatasetGenerator {
         let totalWritten = allPairsBySplit.values.reduce(0) { $0 + $1.count }
         state.log("Phase 4 complete: \(totalWritten) total pairs written")
 
-        // MARK: Phase 5 - Write Metadata & Cleanup (95% - 100%)
+        // MARK: Phase 5 - Persist Dataset & Cleanup (95% - 100%)
 
         state.status = .generating(phase: "Writing metadata...", progress: 0.95)
-        state.log("Phase 5: Writing metadata and labels")
+        state.log("Phase 5: Writing metadata, labels, and persisting dataset")
 
         // Write labels.csv per split
         for split in DatasetSplit.allCases {
@@ -321,7 +325,7 @@ enum DatasetGenerator {
             writeLabels(to: splitDir, split: split, pairs: pairs)
         }
 
-        // Write metadata.json
+        // Write metadata.json (for external consumption when exported)
         writeMetadata(
             to: outputDir,
             config: config,
@@ -329,11 +333,38 @@ enum DatasetGenerator {
             pairsBySplit: allPairsBySplit
         )
 
+        // Build split counts for the dataset object
+        var splitCounts: [DatasetSplit: [DatasetCategory: Int]] = [:]
+        for split in DatasetSplit.allCases {
+            let pairs = allPairsBySplit[split] ?? []
+            var catCounts: [DatasetCategory: Int] = [:]
+            for category in DatasetCategory.allCases {
+                catCounts[category] = pairs.filter { $0.category == category }.count
+            }
+            splitCounts[split] = catCounts
+        }
+
+        // Create and persist the dataset
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let datasetName = "\(project.name) - \(dateFormatter.string(from: Date()))"
+
+        let dataset = PuzzleDataset(
+            id: datasetID,
+            name: datasetName,
+            sourceProjectID: project.id,
+            sourceProjectName: project.name,
+            configuration: config,
+            splitCounts: splitCounts
+        )
+        DatasetStore.saveDataset(dataset)
+        state.datasets.append(dataset)
+
         // Cleanup temp
         cleanup(tempDir: tempDir)
 
         state.status = .generating(phase: "Complete", progress: 1.0)
-        state.log("Dataset generation complete: \(totalWritten) pairs in \(outputDir.path)")
+        state.log("Dataset generation complete: \(totalWritten) pairs persisted as \"\(datasetName)\"")
         state.status = .completed(pairCount: totalWritten)
     }
 

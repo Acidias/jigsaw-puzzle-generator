@@ -64,8 +64,6 @@ struct DatasetConfiguration {
     var trainRatio: Double = 0.70
     var testRatio: Double = 0.15
     var validRatio: Double = 0.15
-    var outputDirectory: URL?
-
     /// Total pairs across all categories.
     var totalPairs: Int {
         correctCount + wrongShapeMatchCount + wrongImageMatchCount + wrongNothingCount
@@ -113,6 +111,13 @@ class DatasetState: ObservableObject {
     @Published var configuration = DatasetConfiguration()
     @Published var status: DatasetGenerationStatus = .idle
     @Published var logMessages: [String] = []
+    @Published var datasets: [PuzzleDataset] = []
+    @Published var selectedDatasetID: UUID?
+
+    var selectedDataset: PuzzleDataset? {
+        guard let id = selectedDatasetID else { return nil }
+        return datasets.first { $0.id == id }
+    }
 
     var isRunning: Bool {
         if case .generating = status { return true }
@@ -149,5 +154,19 @@ class DatasetState: ObservableObject {
 
     func nothingPool(imageCount: Int) -> Int {
         imageCount * (imageCount - 1) * configuration.cutsPerImage * (configuration.cutsPerImage - 1)
+    }
+
+    // MARK: - Dataset Persistence
+
+    func loadDatasets() {
+        datasets = DatasetStore.loadAllDatasets()
+    }
+
+    func deleteDataset(_ dataset: PuzzleDataset) {
+        DatasetStore.deleteDataset(id: dataset.id)
+        datasets.removeAll { $0.id == dataset.id }
+        if selectedDatasetID == dataset.id {
+            selectedDatasetID = nil
+        }
     }
 }
