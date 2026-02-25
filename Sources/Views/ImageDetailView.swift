@@ -6,43 +6,14 @@ struct ImageDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Image preview with puzzle overlay
-                ZStack {
-                    Image(nsImage: image.sourceImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .overlay {
-                            if image.hasGeneratedPieces {
-                                PuzzleOverlayView(image: image)
-                            }
-                        }
-
-                    // Generation overlay with progress
-                    if image.isGenerating {
-                        ZStack {
-                            Color.black.opacity(0.4)
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                    .controlSize(.large)
-                                    .tint(.white)
-                                Text("Generating puzzle...")
-                                    .font(.headline)
-                                    .foregroundStyle(.white)
-                                ProgressView(value: image.progress)
-                                    .progressViewStyle(.linear)
-                                    .tint(.white)
-                                    .frame(width: 200)
-                                Text("\(Int(image.progress * 100))%")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.8))
-                            }
-                        }
-                    }
-                }
-                .frame(maxHeight: 500)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .shadow(radius: 4)
-                .padding(.horizontal)
+                // Source image preview
+                Image(nsImage: image.sourceImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxHeight: 500)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(radius: 4)
+                    .padding(.horizontal)
 
                 // Image info
                 HStack(spacing: 24) {
@@ -50,8 +21,8 @@ struct ImageDetailView: View {
                     if let url = image.sourceImageURL {
                         Label(url.lastPathComponent, systemImage: "doc")
                     }
-                    if image.hasGeneratedPieces {
-                        Label("\(image.pieces.count) pieces", systemImage: "puzzlepiece")
+                    if !image.cuts.isEmpty {
+                        Label("\(image.cuts.count) puzzle\(image.cuts.count == 1 ? "" : "s") generated", systemImage: "puzzlepiece")
                     }
                 }
                 .font(.callout)
@@ -59,7 +30,7 @@ struct ImageDetailView: View {
 
                 Divider()
 
-                // Configuration panel
+                // Generate a new puzzle cut
                 ConfigurationPanel(image: image)
                     .padding(.horizontal)
 

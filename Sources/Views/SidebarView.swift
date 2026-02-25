@@ -5,6 +5,7 @@ enum SidebarItem: Hashable {
     case batchOpenverse
     case project(UUID)
     case image(UUID)
+    case cut(UUID)
     case piece(UUID)
 }
 
@@ -48,32 +49,43 @@ struct SidebarView: View {
         case .batchLocal, .batchOpenverse:
             appState.selectedProjectID = nil
             appState.selectedImageID = nil
+            appState.selectedCutID = nil
             appState.selectedPieceID = nil
 
         case .project(let id):
             appState.selectedProjectID = id
             appState.selectedImageID = nil
+            appState.selectedCutID = nil
             appState.selectedPieceID = nil
 
         case .image(let imageID):
-            // Find the project that owns this image
             if let project = appState.projectForImage(id: imageID) {
                 appState.selectedProjectID = project.id
                 appState.selectedImageID = imageID
+                appState.selectedCutID = nil
+                appState.selectedPieceID = nil
+            }
+
+        case .cut(let cutID):
+            if let result = appState.imageForCut(id: cutID) {
+                appState.selectedProjectID = result.project.id
+                appState.selectedImageID = result.image.id
+                appState.selectedCutID = cutID
                 appState.selectedPieceID = nil
             }
 
         case .piece(let pieceID):
-            // Find the image and project that own this piece
-            if let result = appState.imageForPiece(id: pieceID) {
+            if let result = appState.cutForPiece(id: pieceID) {
                 appState.selectedProjectID = result.project.id
                 appState.selectedImageID = result.image.id
+                appState.selectedCutID = result.cut.id
                 appState.selectedPieceID = pieceID
             }
 
         case nil:
             appState.selectedProjectID = nil
             appState.selectedImageID = nil
+            appState.selectedCutID = nil
             appState.selectedPieceID = nil
         }
     }
@@ -99,7 +111,7 @@ struct SidebarView: View {
     }
 }
 
-/// Three-level project row: Project > Images > Pieces.
+/// Project row: Project > Images > Cuts > Pieces.
 private struct ProjectRow: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var project: PuzzleProject
@@ -130,9 +142,8 @@ private struct ProjectRow: View {
                     Text(project.name)
                         .fontWeight(.medium)
                     let imageCount = project.images.count
-                    let pieceCount = project.images.reduce(0) { $0 + $1.pieces.count }
                     if imageCount > 0 {
-                        Text("\(imageCount) image\(imageCount == 1 ? "" : "s"), \(pieceCount) pieces")
+                        Text("\(imageCount) image\(imageCount == 1 ? "" : "s")")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -143,14 +154,42 @@ private struct ProjectRow: View {
     }
 }
 
-/// Image row within a project, showing pieces underneath.
+/// Image row showing cuts underneath.
 private struct ImageRow: View {
     @ObservedObject var image: PuzzleImage
 
     var body: some View {
         DisclosureGroup {
-            if image.hasGeneratedPieces {
-                ForEach(image.pieces) { piece in
+            if image.cuts.isEmpty {
+                Text("No puzzles generated yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                ForEach(image.cuts) { cut in
+                    CutRow(cut: cut)
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "photo")
+                    .foregroundStyle(.teal)
+                Text(image.name)
+                    .fontWeight(.medium)
+            }
+            .tag(SidebarItem.image(image.id))
+        }
+    }
+}
+
+/// Cut row (e.g. "5x5 - 25 pieces") showing pieces underneath.
+private struct CutRow: View {
+    @ObservedObject var cut: PuzzleCut
+
+    var body: some View {
+        DisclosureGroup {
+            if cut.hasGeneratedPieces {
+                ForEach(cut.pieces) { piece in
                     HStack(spacing: 8) {
                         pieceTypeIcon(piece.pieceType)
                         Text(piece.displayLabel)
@@ -158,40 +197,24 @@ private struct ImageRow: View {
                     }
                     .tag(SidebarItem.piece(piece.id))
                 }
-            } else if image.isGenerating {
+            } else if cut.isGenerating {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Generating...")
+                    Text("Generating... \(Int(cut.progress * 100))%")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .italic()
                 }
-            } else {
-                Text("No pieces generated yet")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .italic()
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "photo")
-                    .foregroundStyle(.teal)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(image.name)
-                        .fontWeight(.medium)
-                    if image.hasGeneratedPieces {
-                        Text("\(image.pieces.count) pieces")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if image.isGenerating {
-                        Text("Generating... \(Int(image.progress * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Image(systemName: "puzzlepiece.extension")
+                    .foregroundStyle(.purple)
+                Text(cut.displayName)
+                    .fontWeight(.medium)
             }
-            .tag(SidebarItem.image(image.id))
+            .tag(SidebarItem.cut(cut.id))
         }
     }
 

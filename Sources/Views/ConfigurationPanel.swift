@@ -4,71 +4,58 @@ struct ConfigurationPanel: View {
     @ObservedObject var image: PuzzleImage
     @EnvironmentObject var appState: AppState
 
+    @State private var columns: Int = 5
+    @State private var rows: Int = 5
     @State private var showErrorAlert = false
+    @State private var errorMessage: String?
+    @State private var isGenerating = false
 
     var body: some View {
-        GroupBox("Puzzle Configuration") {
+        GroupBox("Generate Puzzle") {
             VStack(spacing: 16) {
                 // Grid size controls
                 HStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Columns: \(image.configuration.columns)")
+                        Text("Columns: \(columns)")
                             .font(.callout)
                             .fontWeight(.medium)
                         HStack {
                             Slider(
                                 value: Binding(
-                                    get: { Double(image.configuration.columns) },
-                                    set: { image.configuration.columns = Int($0) }
+                                    get: { Double(columns) },
+                                    set: { columns = Int($0) }
                                 ),
                                 in: 1...100,
                                 step: 1
                             )
-                            Stepper(
-                                "",
-                                value: $image.configuration.columns,
-                                in: 1...100
-                            )
-                            .labelsHidden()
+                            Stepper("", value: $columns, in: 1...100)
+                                .labelsHidden()
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Rows: \(image.configuration.rows)")
+                        Text("Rows: \(rows)")
                             .font(.callout)
                             .fontWeight(.medium)
                         HStack {
                             Slider(
                                 value: Binding(
-                                    get: { Double(image.configuration.rows) },
-                                    set: { image.configuration.rows = Int($0) }
+                                    get: { Double(rows) },
+                                    set: { rows = Int($0) }
                                 ),
                                 in: 1...100,
                                 step: 1
                             )
-                            Stepper(
-                                "",
-                                value: $image.configuration.rows,
-                                in: 1...100
-                            )
-                            .labelsHidden()
+                            Stepper("", value: $rows, in: 1...100)
+                                .labelsHidden()
                         }
                     }
                 }
 
-                // Summary and generate button
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if image.hasGeneratedPieces {
-                            Text("\(image.pieces.count) pieces generated")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("\(image.configuration.totalPieces) pieces")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    Text("\(columns * rows) pieces")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
 
                     Spacer()
 
@@ -79,7 +66,7 @@ struct ConfigurationPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .disabled(image.isGenerating)
+                    .disabled(isGenerating)
                 }
             }
             .padding(8)
@@ -87,27 +74,30 @@ struct ConfigurationPanel: View {
         .alert("Generation Failed", isPresented: $showErrorAlert) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(image.lastError ?? "An unknown error occurred.")
+            Text(errorMessage ?? "An unknown error occurred.")
         }
     }
 
     private func generatePuzzle() {
-        guard !image.isGenerating else { return }
+        guard !isGenerating else { return }
+
+        var config = PuzzleConfiguration(columns: columns, rows: rows)
+        config.validate()
+        columns = config.columns
+        rows = config.rows
+
+        let cut = PuzzleCut(configuration: config)
+        image.cuts.append(cut)
+
+        // Select the new cut in the sidebar
+        appState.selectedCutID = cut.id
+        appState.selectedPieceID = nil
+
+        isGenerating = true
 
         Task {
-            image.isGenerating = true
-            image.progress = 0.0
-            image.pieces = []
-            image.linesImage = nil
-            image.lastError = nil
-            appState.selectedPieceID = nil
-
-            // Clean up previous output directory before generating
-            image.cleanupOutputDirectory()
-
-            var config = image.configuration
-            config.validate()
-            image.configuration = config
+            cut.isGenerating = true
+            cut.progress = 0.0
 
             let generator = PuzzleGenerator()
             let result = await generator.generate(
@@ -116,29 +106,33 @@ struct ConfigurationPanel: View {
                 configuration: config,
                 onProgress: { progress in
                     Task { @MainActor in
-                        image.progress = progress
+                        cut.progress = progress
                     }
                 }
             )
 
             switch result {
             case .success(let generation):
-                image.pieces = generation.pieces
-                image.linesImage = generation.linesImage
-                image.outputDirectory = generation.outputDirectory
+                cut.pieces = generation.pieces
+                cut.linesImage = generation.linesImage
+                cut.outputDirectory = generation.outputDirectory
 
-                // Persist generated pieces and save project
+                // Persist
                 if let project = appState.projectForImage(id: image.id) {
-                    ProjectStore.moveGeneratedPieces(for: image, in: project)
-                    ProjectStore.saveLinesOverlay(for: image, in: project)
+                    ProjectStore.moveGeneratedPieces(for: cut, imageID: image.id, in: project)
+                    ProjectStore.saveLinesOverlay(for: cut, imageID: image.id, in: project)
                     appState.saveProject(project)
                 }
             case .failure(let error):
-                image.lastError = error.errorDescription
+                cut.lastError = error.errorDescription
+                errorMessage = error.errorDescription
                 showErrorAlert = true
+                // Remove the failed cut
+                image.cuts.removeAll { $0.id == cut.id }
             }
-            image.isGenerating = false
-            image.progress = 1.0
+            cut.isGenerating = false
+            cut.progress = 1.0
+            isGenerating = false
         }
     }
 }

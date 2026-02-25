@@ -23,7 +23,6 @@ struct ContentView: View {
             SidebarView(selection: $sidebarSelection)
         } detail: {
             VStack(spacing: 0) {
-                // Detail content
                 Group {
                     switch sidebarSelection {
                     case .batchLocal:
@@ -36,7 +35,6 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Batch bottom panels (only when a batch tab is selected)
                 if isBatchSelected {
                     Divider()
 
@@ -73,7 +71,7 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
-                if let image = appState.selectedImage, image.hasGeneratedPieces {
+                if let cut = appState.selectedCut, cut.hasGeneratedPieces {
                     Button {
                         exportAll()
                     } label: {
@@ -114,11 +112,12 @@ struct ContentView: View {
         } message: {
             Text("Enter a name for the new project.")
         }
-        // Sync: when a project/image is selected via AppState, update sidebar selection
         .onChange(of: appState.selectedProjectID) { _, newID in
             guard let id = newID else { return }
             if let pieceID = appState.selectedPieceID {
                 sidebarSelection = .piece(pieceID)
+            } else if let cutID = appState.selectedCutID {
+                sidebarSelection = .cut(cutID)
             } else if let imageID = appState.selectedImageID {
                 sidebarSelection = .image(imageID)
             } else {
@@ -127,8 +126,10 @@ struct ContentView: View {
         }
         .onChange(of: appState.selectedImageID) { _, newID in
             if let id = newID {
-                if let pieceID = appState.selectedPieceID {
-                    sidebarSelection = .piece(pieceID)
+                if appState.selectedPieceID != nil {
+                    // piece change handler will set sidebar
+                } else if appState.selectedCutID != nil {
+                    // cut change handler will set sidebar
                 } else {
                     sidebarSelection = .image(id)
                 }
@@ -136,25 +137,36 @@ struct ContentView: View {
                 sidebarSelection = .project(projectID)
             }
         }
+        .onChange(of: appState.selectedCutID) { _, newID in
+            if let id = newID {
+                if let pieceID = appState.selectedPieceID {
+                    sidebarSelection = .piece(pieceID)
+                } else {
+                    sidebarSelection = .cut(id)
+                }
+            } else if let imageID = appState.selectedImageID {
+                sidebarSelection = .image(imageID)
+            }
+        }
         .onChange(of: appState.selectedPieceID) { _, newID in
             if let id = newID {
                 sidebarSelection = .piece(id)
+            } else if let cutID = appState.selectedCutID {
+                sidebarSelection = .cut(cutID)
             } else if let imageID = appState.selectedImageID {
                 sidebarSelection = .image(imageID)
-            } else if let projectID = appState.selectedProjectID {
-                sidebarSelection = .project(projectID)
             }
         }
     }
 
     @ViewBuilder
     private var projectDetailView: some View {
-        if let image = appState.selectedImage {
-            if let piece = appState.selectedPiece {
-                PieceDetailView(image: image, piece: piece)
-            } else {
-                ImageDetailView(image: image)
-            }
+        if let piece = appState.selectedPiece {
+            PieceDetailView(piece: piece)
+        } else if let cut = appState.selectedCut, let image = appState.selectedImage {
+            CutDetailView(image: image, cut: cut)
+        } else if let image = appState.selectedImage {
+            ImageDetailView(image: image)
         } else if let project = appState.selectedProject {
             ProjectDetailView(project: project)
         } else {
@@ -167,7 +179,6 @@ struct ContentView: View {
         showErrorAlert = true
     }
 
-    /// Ensures a project is available for the import. Creates one if needed.
     private func ensureProject() -> PuzzleProject {
         if let project = appState.selectedProject {
             return project
@@ -197,14 +208,12 @@ struct ContentView: View {
         let image = PuzzleImage(name: name, sourceImage: nsImage, sourceImageURL: url)
         let project = ensureProject()
         appState.addImage(image, to: project)
-        // Persist: copy source image and save manifest
         ProjectStore.copySourceImage(image, to: project)
         appState.saveProject(project)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         for provider in providers {
-            // Try loading as a file URL first
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, error in
                     if let error = error {
@@ -216,20 +225,14 @@ struct ContentView: View {
                     guard let data = data as? Data,
                           let url = URL(dataRepresentation: data, relativeTo: nil)
                     else {
-                        Task { @MainActor in
-                            showError("Could not read the dropped file.")
-                        }
+                        Task { @MainActor in showError("Could not read the dropped file.") }
                         return
                     }
-
-                    Task { @MainActor in
-                        loadImage(from: url)
-                    }
+                    Task { @MainActor in loadImage(from: url) }
                 }
                 return true
             }
 
-            // Try loading as image data
             if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
                     if let error = error {
@@ -258,7 +261,8 @@ struct ContentView: View {
     }
 
     private func exportAll() {
-        guard let image = appState.selectedImage, image.hasGeneratedPieces else { return }
+        guard let cut = appState.selectedCut, cut.hasGeneratedPieces,
+              let image = appState.selectedImage else { return }
 
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -269,14 +273,14 @@ struct ContentView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            try ExportService.export(image: image, to: url)
+            try ExportService.export(cut: cut, imageName: image.name, imageWidth: image.imageWidth, imageHeight: image.imageHeight, attribution: image.attribution, to: url)
         } catch {
             showError(error.localizedDescription)
         }
     }
 }
 
-/// Shows when a project is selected but no image is selected within it.
+/// Shows when a project is selected but no image is selected.
 struct ProjectDetailView: View {
     @ObservedObject var project: PuzzleProject
 

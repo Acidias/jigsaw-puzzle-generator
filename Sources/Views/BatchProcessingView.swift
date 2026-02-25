@@ -62,7 +62,7 @@ struct LocalImagesPanel: View {
             .onDelete { offsets in
                 guard !batchState.isRunning else { return }
                 for index in offsets {
-                    batchState.items[index].puzzleImage?.cleanupOutputDirectory()
+                    batchState.items[index].puzzleImage?.cuts.forEach { $0.cleanupOutputDirectory() }
                 }
                 batchState.items.remove(atOffsets: offsets)
             }

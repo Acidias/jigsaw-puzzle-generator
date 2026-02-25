@@ -9,8 +9,9 @@ import Foundation
 ///     manifest.json
 ///     images/<image-uuid>/
 ///       source.<ext>
-///       pieces/piece_0.png ...
-///       lines.png
+///       cuts/<cut-uuid>/
+///         pieces/piece_0.png ...
+///         lines.png
 enum ProjectStore {
 
     // MARK: - Paths
@@ -35,14 +36,19 @@ enum ProjectStore {
             .appendingPathComponent(imageID.uuidString)
     }
 
-    static func piecesDirectory(projectID: UUID, imageID: UUID) -> URL {
+    static func cutDirectory(projectID: UUID, imageID: UUID, cutID: UUID) -> URL {
         imageDirectory(projectID: projectID, imageID: imageID)
+            .appendingPathComponent("cuts")
+            .appendingPathComponent(cutID.uuidString)
+    }
+
+    static func piecesDirectory(projectID: UUID, imageID: UUID, cutID: UUID) -> URL {
+        cutDirectory(projectID: projectID, imageID: imageID, cutID: cutID)
             .appendingPathComponent("pieces")
     }
 
     // MARK: - Save
 
-    /// Saves a project's manifest to disk.
     @MainActor
     static func saveProject(_ project: PuzzleProject) {
         let projectDir = projectDirectory(for: project.id)
@@ -64,26 +70,29 @@ enum ProjectStore {
                     id: image.id,
                     name: image.name,
                     sourceImageFilename: image.sourceImagePath ?? "",
-                    configuration: image.configuration,
-                    pieces: image.pieces.map { piece in
-                        PieceManifest(
-                            id: piece.id,
-                            pieceIndex: piece.pieceIndex,
-                            row: piece.row,
-                            col: piece.col,
-                            x1: piece.x1,
-                            y1: piece.y1,
-                            x2: piece.x2,
-                            y2: piece.y2,
-                            pieceWidth: piece.pieceWidth,
-                            pieceHeight: piece.pieceHeight,
-                            pieceType: piece.pieceType,
-                            neighbourIDs: piece.neighbourIDs,
-                            imageFilename: piece.imagePath?.lastPathComponent ?? "piece_\(piece.pieceIndex).png"
-                        )
-                    },
                     attribution: image.attribution,
-                    hasLinesOverlay: image.linesImage != nil
+                    cuts: image.cuts.map { cut in
+                        CutManifest(
+                            id: cut.id,
+                            configuration: cut.configuration,
+                            pieces: cut.pieces.map { piece in
+                                PieceManifest(
+                                    id: piece.id,
+                                    pieceIndex: piece.pieceIndex,
+                                    row: piece.row,
+                                    col: piece.col,
+                                    x1: piece.x1, y1: piece.y1,
+                                    x2: piece.x2, y2: piece.y2,
+                                    pieceWidth: piece.pieceWidth,
+                                    pieceHeight: piece.pieceHeight,
+                                    pieceType: piece.pieceType,
+                                    neighbourIDs: piece.neighbourIDs,
+                                    imageFilename: piece.imagePath?.lastPathComponent ?? "piece_\(piece.pieceIndex).png"
+                                )
+                            },
+                            hasLinesOverlay: cut.linesImage != nil
+                        )
+                    }
                 )
             }
         )
@@ -102,7 +111,6 @@ enum ProjectStore {
 
     // MARK: - Load
 
-    /// Loads all persisted projects from disk.
     @MainActor
     static func loadAllProjects() -> [PuzzleProject] {
         let fm = FileManager.default
@@ -121,7 +129,6 @@ enum ProjectStore {
         for dir in contents {
             let manifestURL = dir.appendingPathComponent("manifest.json")
             guard fm.fileExists(atPath: manifestURL.path) else { continue }
-
             guard let data = try? Data(contentsOf: manifestURL) else { continue }
 
             let decoder = JSONDecoder()
@@ -138,7 +145,6 @@ enum ProjectStore {
                 let imgDir = imageDirectory(projectID: manifest.id, imageID: imageManifest.id)
                 let sourceURL = imgDir.appendingPathComponent(imageManifest.sourceImageFilename)
 
-                // Load source image from permanent storage
                 guard let sourceImage = NSImage(contentsOf: sourceURL) else {
                     print("ProjectStore: Could not load source image at \(sourceURL.path), skipping")
                     continue
@@ -151,34 +157,47 @@ enum ProjectStore {
                     sourceImageURL: sourceURL
                 )
                 puzzleImage.sourceImagePath = imageManifest.sourceImageFilename
-                puzzleImage.configuration = imageManifest.configuration
                 puzzleImage.attribution = imageManifest.attribution
 
-                // Load pieces with resolved paths
-                let piecesDir = imgDir.appendingPathComponent("pieces")
-                puzzleImage.pieces = imageManifest.pieces.map { pm in
-                    let piecePath = piecesDir.appendingPathComponent(pm.imageFilename)
-                    return PuzzlePiece(
-                        id: pm.id,
-                        pieceIndex: pm.pieceIndex,
-                        row: pm.row,
-                        col: pm.col,
-                        x1: pm.x1, y1: pm.y1,
-                        x2: pm.x2, y2: pm.y2,
-                        pieceWidth: pm.pieceWidth,
-                        pieceHeight: pm.pieceHeight,
-                        pieceType: pm.pieceType,
-                        neighbourIDs: pm.neighbourIDs,
-                        imagePath: fm.fileExists(atPath: piecePath.path) ? piecePath : nil
+                // Load cuts
+                for cutManifest in imageManifest.cuts {
+                    let cut = PuzzleCut(id: cutManifest.id, configuration: cutManifest.configuration)
+                    let cutPiecesDir = piecesDirectory(
+                        projectID: manifest.id,
+                        imageID: imageManifest.id,
+                        cutID: cutManifest.id
                     )
-                }
 
-                // Load lines overlay if it exists
-                if imageManifest.hasLinesOverlay {
-                    let linesURL = imgDir.appendingPathComponent("lines.png")
-                    if let linesImage = NSImage(contentsOf: linesURL) {
-                        puzzleImage.linesImage = linesImage
+                    cut.pieces = cutManifest.pieces.map { pm in
+                        let piecePath = cutPiecesDir.appendingPathComponent(pm.imageFilename)
+                        return PuzzlePiece(
+                            id: pm.id,
+                            pieceIndex: pm.pieceIndex,
+                            row: pm.row,
+                            col: pm.col,
+                            x1: pm.x1, y1: pm.y1,
+                            x2: pm.x2, y2: pm.y2,
+                            pieceWidth: pm.pieceWidth,
+                            pieceHeight: pm.pieceHeight,
+                            pieceType: pm.pieceType,
+                            neighbourIDs: pm.neighbourIDs,
+                            imagePath: fm.fileExists(atPath: piecePath.path) ? piecePath : nil
+                        )
                     }
+
+                    if cutManifest.hasLinesOverlay {
+                        let cutDir = cutDirectory(
+                            projectID: manifest.id,
+                            imageID: imageManifest.id,
+                            cutID: cutManifest.id
+                        )
+                        let linesURL = cutDir.appendingPathComponent("lines.png")
+                        if let linesImage = NSImage(contentsOf: linesURL) {
+                            cut.linesImage = linesImage
+                        }
+                    }
+
+                    puzzleImage.cuts.append(cut)
                 }
 
                 project.images.append(puzzleImage)
@@ -187,20 +206,17 @@ enum ProjectStore {
             projects.append(project)
         }
 
-        // Sort by creation date
         projects.sort { $0.createdAt < $1.createdAt }
         return projects
     }
 
     // MARK: - Delete
 
-    /// Removes a project's entire directory from disk.
     static func deleteProject(id: UUID) {
         let dir = projectDirectory(for: id)
         try? FileManager.default.removeItem(at: dir)
     }
 
-    /// Removes a single image directory from a project on disk.
     static func deleteImage(projectID: UUID, imageID: UUID) {
         let dir = imageDirectory(projectID: projectID, imageID: imageID)
         try? FileManager.default.removeItem(at: dir)
@@ -208,7 +224,6 @@ enum ProjectStore {
 
     // MARK: - File Operations
 
-    /// Copies (or encodes) the source image into the project's permanent storage.
     @MainActor
     static func copySourceImage(_ image: PuzzleImage, to project: PuzzleProject) {
         let imgDir = imageDirectory(projectID: project.id, imageID: image.id)
@@ -221,7 +236,6 @@ enum ProjectStore {
             return
         }
 
-        // Determine filename
         let sourceFilename: String
         if let url = image.sourceImageURL {
             sourceFilename = "source.\(url.pathExtension.lowercased().isEmpty ? "png" : url.pathExtension.lowercased())"
@@ -231,13 +245,11 @@ enum ProjectStore {
 
         let destURL = imgDir.appendingPathComponent(sourceFilename)
 
-        // If already copied, skip
         if fm.fileExists(atPath: destURL.path) {
             image.sourceImagePath = sourceFilename
             return
         }
 
-        // Try to copy from original URL
         if let sourceURL = image.sourceImageURL, fm.fileExists(atPath: sourceURL.path) {
             do {
                 try fm.copyItem(at: sourceURL, to: destURL)
@@ -249,7 +261,6 @@ enum ProjectStore {
             }
         }
 
-        // Fallback: encode NSImage as PNG
         if let tiffData = image.sourceImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {
@@ -266,9 +277,9 @@ enum ProjectStore {
 
     /// Moves generated piece PNGs from the temp output directory to permanent storage.
     @MainActor
-    static func moveGeneratedPieces(for image: PuzzleImage, in project: PuzzleProject) {
-        guard let tempDir = image.outputDirectory else { return }
-        let permanentDir = piecesDirectory(projectID: project.id, imageID: image.id)
+    static func moveGeneratedPieces(for cut: PuzzleCut, imageID: UUID, in project: PuzzleProject) {
+        guard let tempDir = cut.outputDirectory else { return }
+        let permanentDir = piecesDirectory(projectID: project.id, imageID: imageID, cutID: cut.id)
         let fm = FileManager.default
 
         do {
@@ -278,9 +289,8 @@ enum ProjectStore {
             return
         }
 
-        // Move each piece file
         var updatedPieces: [PuzzlePiece] = []
-        for piece in image.pieces {
+        for piece in cut.pieces {
             guard let sourcePath = piece.imagePath else {
                 updatedPieces.append(piece)
                 continue
@@ -289,20 +299,17 @@ enum ProjectStore {
             let filename = sourcePath.lastPathComponent
             let destURL = permanentDir.appendingPathComponent(filename)
 
-            // If already in permanent location, skip
             if sourcePath.path == destURL.path {
                 updatedPieces.append(piece)
                 continue
             }
 
             do {
-                // Remove existing file if present (e.g. from a previous generation)
                 if fm.fileExists(atPath: destURL.path) {
                     try fm.removeItem(at: destURL)
                 }
                 try fm.copyItem(at: sourcePath, to: destURL)
 
-                // Create updated piece with new path
                 let updated = PuzzlePiece(
                     id: piece.id,
                     pieceIndex: piece.pieceIndex,
@@ -323,19 +330,27 @@ enum ProjectStore {
             }
         }
 
-        image.pieces = updatedPieces
+        cut.pieces = updatedPieces
 
         // Clean up temp directory
         try? fm.removeItem(at: tempDir)
-        image.outputDirectory = nil
+        cut.outputDirectory = nil
     }
 
-    /// Saves the lines overlay image to the image's permanent directory.
+    /// Saves the lines overlay image to the cut's permanent directory.
     @MainActor
-    static func saveLinesOverlay(for image: PuzzleImage, in project: PuzzleProject) {
-        guard let linesImage = image.linesImage else { return }
-        let imgDir = imageDirectory(projectID: project.id, imageID: image.id)
-        let linesURL = imgDir.appendingPathComponent("lines.png")
+    static func saveLinesOverlay(for cut: PuzzleCut, imageID: UUID, in project: PuzzleProject) {
+        guard let linesImage = cut.linesImage else { return }
+        let cutDir = cutDirectory(projectID: project.id, imageID: imageID, cutID: cut.id)
+        let linesURL = cutDir.appendingPathComponent("lines.png")
+
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: cutDir, withIntermediateDirectories: true)
+        } catch {
+            print("ProjectStore: Failed to create cut directory: \(error)")
+            return
+        }
 
         if let tiffData = linesImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),

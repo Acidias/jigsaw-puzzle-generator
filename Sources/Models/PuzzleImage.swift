@@ -2,8 +2,8 @@ import AppKit
 import Combine
 import Foundation
 
-/// Represents a single source image and its generated puzzle pieces.
-/// This is the image-level unit within a PuzzleProject container.
+/// Represents a single source image within a project.
+/// Contains the source image data and a list of puzzle cuts at different grid sizes.
 @MainActor
 class PuzzleImage: ObservableObject, Identifiable {
     let id: UUID
@@ -13,19 +13,10 @@ class PuzzleImage: ObservableObject, Identifiable {
     /// Relative path to the permanent source image copy within the project directory.
     /// Set after the image is persisted to disk by ProjectStore.
     var sourceImagePath: String?
-
-    @Published var configuration: PuzzleConfiguration
-    @Published var pieces: [PuzzlePiece] = []
-    @Published var isGenerating: Bool = false
-    @Published var progress: Double = 0.0
-    /// The puzzle cut lines overlay image.
-    @Published var linesImage: NSImage?
-    /// Last generation error message, shown to the user.
-    @Published var lastError: String?
-    /// Path to the output directory for this generation (temp, before persistence).
-    var outputDirectory: URL?
     /// Attribution and licence info (non-nil for Openverse images).
     var attribution: ImageAttribution?
+    /// Puzzle cuts at different grid sizes.
+    @Published var cuts: [PuzzleCut] = []
 
     /// Image dimensions in pixels (not points) for accurate metadata.
     var imageWidth: Int {
@@ -46,16 +37,6 @@ class PuzzleImage: ObservableObject, Identifiable {
         self.name = name
         self.sourceImage = sourceImage
         self.sourceImageURL = sourceImageURL
-        self.configuration = PuzzleConfiguration()
-    }
-
-    var hasGeneratedPieces: Bool { !pieces.isEmpty }
-
-    /// Removes the output directory from disk.
-    func cleanupOutputDirectory() {
-        guard let dir = outputDirectory else { return }
-        try? FileManager.default.removeItem(at: dir)
-        outputDirectory = nil
     }
 }
 

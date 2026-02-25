@@ -26,8 +26,16 @@ enum ExportError: Error, LocalizedError {
 enum ExportService {
 
     @MainActor
-    static func export(image: PuzzleImage, to directory: URL) throws {
-        let puzzleDir = directory.appendingPathComponent(image.name)
+    static func export(
+        cut: PuzzleCut,
+        imageName: String,
+        imageWidth: Int,
+        imageHeight: Int,
+        attribution: ImageAttribution?,
+        to directory: URL
+    ) throws {
+        let folderName = "\(imageName)_\(cut.configuration.columns)x\(cut.configuration.rows)"
+        let puzzleDir = directory.appendingPathComponent(folderName)
         let piecesDir = puzzleDir.appendingPathComponent("pieces")
 
         do {
@@ -36,14 +44,12 @@ enum ExportService {
             throw ExportError.directoryCreationFailed(error.localizedDescription)
         }
 
-        // Export each piece as PNG - copy from disk when possible
-        for piece in image.pieces {
+        for piece in cut.pieces {
             let filename = "piece_\(piece.pieceIndex).png"
             let destURL = piecesDir.appendingPathComponent(filename)
 
             if let sourcePath = piece.imagePath,
                FileManager.default.fileExists(atPath: sourcePath.path) {
-                // Fast path: copy the existing PNG file directly
                 do {
                     try FileManager.default.copyItem(at: sourcePath, to: destURL)
                 } catch {
@@ -53,7 +59,6 @@ enum ExportService {
                       let tiffData = pieceImage.tiffRepresentation,
                       let bitmap = NSBitmapImageRep(data: tiffData),
                       let pngData = bitmap.representation(using: .png, properties: [:]) {
-                // Fallback: re-encode from NSImage
                 do {
                     try pngData.write(to: destURL)
                 } catch {
@@ -64,9 +69,8 @@ enum ExportService {
             }
         }
 
-        // Export lines overlay if available (always re-encode since it's an NSImage).
-        // Not critical - skip silently if encoding fails since pieces are the main output.
-        if let linesImage = image.linesImage,
+        // Export lines overlay if available
+        if let linesImage = cut.linesImage,
            let tiffData = linesImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {
@@ -75,12 +79,17 @@ enum ExportService {
         }
 
         // Generate metadata JSON
-        let metadata = buildMetadata(image: image)
+        let metadata = buildMetadata(
+            cut: cut,
+            imageName: imageName,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            attribution: attribution
+        )
         do {
             let jsonData = try JSONEncoder().encode(metadata)
             let metadataURL = puzzleDir.appendingPathComponent("metadata.json")
 
-            // Pretty-print the JSON
             if let jsonObject = try? JSONSerialization.jsonObject(with: jsonData),
                let prettyData = try? JSONSerialization.data(withJSONObject: jsonObject, options: .prettyPrinted) {
                 try prettyData.write(to: metadataURL)
@@ -93,8 +102,14 @@ enum ExportService {
     }
 
     @MainActor
-    private static func buildMetadata(image: PuzzleImage) -> PuzzleMetadata {
-        let pieces = image.pieces.map { piece in
+    private static func buildMetadata(
+        cut: PuzzleCut,
+        imageName: String,
+        imageWidth: Int,
+        imageHeight: Int,
+        attribution: ImageAttribution?
+    ) -> PuzzleMetadata {
+        let pieces = cut.pieces.map { piece in
             PieceMetadata(
                 id: piece.pieceIndex,
                 type: piece.pieceType.rawValue,
@@ -108,13 +123,13 @@ enum ExportService {
         }
 
         return PuzzleMetadata(
-            sourceName: image.name,
-            sourceWidth: image.imageWidth,
-            sourceHeight: image.imageHeight,
-            requestedPieces: image.configuration.totalPieces,
-            actualPieces: image.pieces.count,
+            sourceName: imageName,
+            sourceWidth: imageWidth,
+            sourceHeight: imageHeight,
+            requestedPieces: cut.configuration.totalPieces,
+            actualPieces: cut.pieces.count,
             pieces: pieces,
-            attribution: image.attribution
+            attribution: attribution
         )
     }
 }

@@ -29,6 +29,7 @@ class AppState: ObservableObject {
     @Published var projects: [PuzzleProject] = []
     @Published var selectedProjectID: UUID?
     @Published var selectedImageID: UUID?
+    @Published var selectedCutID: UUID?
     @Published var selectedPieceID: UUID?
 
     var selectedProject: PuzzleProject? {
@@ -40,29 +41,36 @@ class AppState: ObservableObject {
         return project.images.first { $0.id == selectedImageID }
     }
 
-    var selectedPiece: PuzzlePiece? {
+    var selectedCut: PuzzleCut? {
         guard let image = selectedImage else { return nil }
-        return image.pieces.first { $0.id == selectedPieceID }
+        return image.cuts.first { $0.id == selectedCutID }
+    }
+
+    var selectedPiece: PuzzlePiece? {
+        guard let cut = selectedCut else { return nil }
+        return cut.pieces.first { $0.id == selectedPieceID }
     }
 
     func addProject(_ project: PuzzleProject) {
         projects.append(project)
         selectedProjectID = project.id
         selectedImageID = nil
+        selectedCutID = nil
         selectedPieceID = nil
     }
 
     func removeProject(_ project: PuzzleProject) {
-        // Clean up all image output directories
         for image in project.images {
-            image.cleanupOutputDirectory()
+            for cut in image.cuts {
+                cut.cleanupOutputDirectory()
+            }
         }
-        // Remove project directory from disk
         ProjectStore.deleteProject(id: project.id)
         projects.removeAll { $0.id == project.id }
         if selectedProjectID == project.id {
             selectedProjectID = projects.first?.id
             selectedImageID = nil
+            selectedCutID = nil
             selectedPieceID = nil
         }
     }
@@ -71,16 +79,19 @@ class AppState: ObservableObject {
         project.images.append(image)
         selectedProjectID = project.id
         selectedImageID = image.id
+        selectedCutID = nil
         selectedPieceID = nil
     }
 
     func removeImage(_ image: PuzzleImage, from project: PuzzleProject) {
-        image.cleanupOutputDirectory()
+        for cut in image.cuts {
+            cut.cleanupOutputDirectory()
+        }
         project.images.removeAll { $0.id == image.id }
-        // Remove image directory from disk
         ProjectStore.deleteImage(projectID: project.id, imageID: image.id)
         if selectedImageID == image.id {
             selectedImageID = project.images.first?.id
+            selectedCutID = nil
             selectedPieceID = nil
         }
     }
@@ -92,12 +103,26 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Find the image and its parent project for a given piece ID.
-    func imageForPiece(id: UUID) -> (project: PuzzleProject, image: PuzzleImage)? {
+    /// Find the project and image that contain a given cut ID.
+    func imageForCut(id: UUID) -> (project: PuzzleProject, image: PuzzleImage)? {
         for project in projects {
             for image in project.images {
-                if image.pieces.contains(where: { $0.id == id }) {
+                if image.cuts.contains(where: { $0.id == id }) {
                     return (project, image)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Find the project, image, and cut that contain a given piece ID.
+    func cutForPiece(id: UUID) -> (project: PuzzleProject, image: PuzzleImage, cut: PuzzleCut)? {
+        for project in projects {
+            for image in project.images {
+                for cut in image.cuts {
+                    if cut.pieces.contains(where: { $0.id == id }) {
+                        return (project, image, cut)
+                    }
                 }
             }
         }

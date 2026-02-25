@@ -39,7 +39,6 @@ class BatchItem: ObservableObject, Identifiable {
         self.sourceImageURL = sourceImageURL
         self.attribution = attribution
 
-        // Get pixel dimensions (not point dimensions)
         if let rep = sourceImage.representations.first, rep.pixelsWide > 0 {
             self.imageWidth = rep.pixelsWide
             self.imageHeight = rep.pixelsHigh
@@ -128,7 +127,7 @@ class BatchState: ObservableObject {
         }
     }
 
-func clearAll() {
+    func clearAll() {
         cleanup()
         items.removeAll()
     }
@@ -138,10 +137,8 @@ func clearAll() {
         isRunning = true
         isCancelled = false
 
-        // Reset any previously finished items
         for item in items {
             if item.status.isFinished {
-                item.puzzleImage?.cleanupOutputDirectory()
                 item.puzzleImage = nil
                 item.status = .pending
             }
@@ -156,13 +153,11 @@ func clearAll() {
                 if isCancelled { break }
                 guard case .pending = item.status else { continue }
 
-                // Skip checks
                 if let reason = skipReason(for: item) {
                     item.status = .skipped(reason: reason)
                     continue
                 }
 
-                // Generate
                 item.status = .generating(progress: 0)
 
                 let generator = PuzzleGenerator()
@@ -179,34 +174,43 @@ func clearAll() {
 
                 switch result {
                 case .success(let generation):
+                    // Create image + cut
                     let puzzleImage = PuzzleImage(
                         name: item.name,
                         sourceImage: item.sourceImage,
                         sourceImageURL: item.sourceImageURL
                     )
-                    puzzleImage.configuration = config
                     puzzleImage.attribution = item.attribution
-                    puzzleImage.pieces = generation.pieces
-                    puzzleImage.linesImage = generation.linesImage
-                    puzzleImage.outputDirectory = generation.outputDirectory
+
+                    let cut = PuzzleCut(configuration: config)
+                    cut.pieces = generation.pieces
+                    cut.linesImage = generation.linesImage
+                    cut.outputDirectory = generation.outputDirectory
+                    puzzleImage.cuts.append(cut)
+
                     item.puzzleImage = puzzleImage
                     item.status = .completed(pieceCount: generation.actualPieceCount)
 
-                    // Add to target project
+                    // Add to target project and persist
                     appState.addImage(puzzleImage, to: project)
-
-                    // Persist: copy source, move pieces, save
                     ProjectStore.copySourceImage(puzzleImage, to: project)
-                    ProjectStore.moveGeneratedPieces(for: puzzleImage, in: project)
-                    ProjectStore.saveLinesOverlay(for: puzzleImage, in: project)
+                    ProjectStore.moveGeneratedPieces(for: cut, imageID: puzzleImage.id, in: project)
+                    ProjectStore.saveLinesOverlay(for: cut, imageID: puzzleImage.id, in: project)
                     appState.saveProject(project)
 
                     // Auto-export if enabled
                     if configuration.autoExport, let dir = configuration.exportDirectory {
                         do {
-                            try ExportService.export(image: puzzleImage, to: dir)
+                            try ExportService.export(
+                                cut: cut,
+                                imageName: puzzleImage.name,
+                                imageWidth: puzzleImage.imageWidth,
+                                imageHeight: puzzleImage.imageHeight,
+                                attribution: puzzleImage.attribution,
+                                to: dir
+                            )
                         } catch {
-                            // Export failure doesn't change item status - generation succeeded
+                            // Export failure doesn't change item status
                         }
                     }
 
@@ -226,13 +230,26 @@ func clearAll() {
     func exportAll(to directory: URL) {
         for item in items {
             guard case .completed = item.status, let puzzleImage = item.puzzleImage else { continue }
-            try? ExportService.export(image: puzzleImage, to: directory)
+            for cut in puzzleImage.cuts {
+                try? ExportService.export(
+                    cut: cut,
+                    imageName: puzzleImage.name,
+                    imageWidth: puzzleImage.imageWidth,
+                    imageHeight: puzzleImage.imageHeight,
+                    attribution: puzzleImage.attribution,
+                    to: directory
+                )
+            }
         }
     }
 
     func cleanup() {
         for item in items {
-            item.puzzleImage?.cleanupOutputDirectory()
+            if let img = item.puzzleImage {
+                for cut in img.cuts {
+                    cut.cleanupOutputDirectory()
+                }
+            }
             item.puzzleImage = nil
         }
     }

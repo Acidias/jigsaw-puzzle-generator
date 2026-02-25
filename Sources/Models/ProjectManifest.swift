@@ -13,9 +13,15 @@ struct ImageManifest: Codable {
     let id: UUID
     var name: String
     var sourceImageFilename: String
+    var attribution: ImageAttribution?
+    var cuts: [CutManifest]
+}
+
+/// Codable manifest for one puzzle cut (a specific grid size and its pieces).
+struct CutManifest: Codable {
+    let id: UUID
     var configuration: PuzzleConfiguration
     var pieces: [PieceManifest]
-    var attribution: ImageAttribution?
     var hasLinesOverlay: Bool
 }
 

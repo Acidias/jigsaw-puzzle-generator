@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct PieceDetailView: View {
-    @ObservedObject var image: PuzzleImage
     let piece: PuzzlePiece
 
     @State private var exportError: String?
@@ -97,14 +96,12 @@ struct PieceDetailView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            // Fast path: copy the file directly from disk
             if let sourcePath = piece.imagePath,
                FileManager.default.fileExists(atPath: sourcePath.path) {
                 try FileManager.default.copyItem(at: sourcePath, to: url)
                 return
             }
 
-            // Fallback: re-encode from NSImage
             guard let pieceImage = piece.image,
                   let tiffData = pieceImage.tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiffData),
