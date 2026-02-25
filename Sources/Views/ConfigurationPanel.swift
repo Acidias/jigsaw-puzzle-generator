@@ -56,9 +56,17 @@ struct ConfigurationPanel: View {
 
                 // Summary and generate button
                 HStack {
-                    Text("\(project.configuration.totalPieces) pieces total")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if project.hasGeneratedPieces {
+                            Text("\(project.pieces.count) pieces generated")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("~\(project.configuration.totalPieces) pieces (approximate)")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     Spacer()
 
