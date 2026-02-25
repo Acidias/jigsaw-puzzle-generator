@@ -91,7 +91,8 @@ struct ConfigurationPanel: View {
                         .frame(maxWidth: 220)
                     }
 
-                    Text("Target: \(columns * pieceSize) x \(rows * pieceSize) px (\(pieceSize) px/piece)")
+                    let canvasSize = Int(ceil(Double(pieceSize) * 1.75))
+                    Text("Source: \(columns * pieceSize) x \(rows * pieceSize) px - Pieces: \(canvasSize) x \(canvasSize) px each")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -281,7 +281,8 @@ struct BatchSettingsPanel: View {
                     }
 
                     let ps = configuration.puzzleConfig.pieceSize ?? 224
-                    Text("Target: \(configuration.puzzleConfig.columns * ps) x \(configuration.puzzleConfig.rows * ps) px (\(ps) px/piece)")
+                    let cs = Int(ceil(Double(ps) * 1.75))
+                    Text("Source: \(configuration.puzzleConfig.columns * ps) x \(configuration.puzzleConfig.rows * ps) px - Pieces: \(cs) x \(cs) px each")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

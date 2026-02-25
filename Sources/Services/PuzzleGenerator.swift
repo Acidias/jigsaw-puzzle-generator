@@ -199,10 +199,14 @@ actor PuzzleGenerator {
         }
 
         // Post-processing: pad pieces to uniform canvas when normalising
-        if config.pieceSize != nil {
-            let maxDim = pieces.reduce(0) { maxVal, piece in
-                max(maxVal, piece.pieceWidth, piece.pieceHeight)
-            }
+        if let pieceSize = config.pieceSize {
+            // Use a deterministic canvas size based on pieceSize, not the actual
+            // per-image maxDim. The bezier algorithm's max tab protrusion is ~0.34
+            // of the cell size (anchorCenter.y in EdgePath). An interior piece can
+            // have tabs on all 4 sides, so worst-case dimension is roughly
+            // pieceSize * 1.68 + 2*bleed. We use 1.75x as a safe upper bound.
+            // This guarantees identical piece dimensions across ALL images.
+            let canvasSize = Int(ceil(Double(pieceSize) * 1.75))
 
             // Determine fill colour
             let fillColour: CGColor
@@ -230,7 +234,7 @@ actor PuzzleGenerator {
                 // Pad to uniform square canvas
                 guard let padded = PieceClipper.padToCanvas(
                     pieceImage: pieceImage,
-                    canvasSize: maxDim,
+                    canvasSize: canvasSize,
                     fillColour: fillColour
                 ) else {
                     continue
@@ -255,8 +259,8 @@ actor PuzzleGenerator {
                     y1: piece.y1,
                     x2: piece.x2,
                     y2: piece.y2,
-                    pieceWidth: maxDim,
-                    pieceHeight: maxDim,
+                    pieceWidth: canvasSize,
+                    pieceHeight: canvasSize,
                     pieceType: piece.pieceType,
                     neighbourIDs: piece.neighbourIDs,
                     imagePath: piece.imagePath
