@@ -304,6 +304,7 @@ struct BatchProgressBar: View {
 // MARK: - Controls
 
 struct BatchControls: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject var batchState: BatchState
 
     var body: some View {
@@ -358,7 +359,7 @@ struct BatchControls: View {
                         chooseExportDirectoryThenStart()
                         return
                     }
-                    batchState.startBatch()
+                    batchState.startBatch(appState: appState)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(batchState.items.isEmpty)
@@ -386,6 +387,6 @@ struct BatchControls: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         batchState.configuration.exportDirectory = url
-        batchState.startBatch()
+        batchState.startBatch(appState: appState)
     }
 }

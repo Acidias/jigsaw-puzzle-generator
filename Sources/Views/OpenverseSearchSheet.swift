@@ -157,6 +157,15 @@ struct OpenversePanel: View {
                 }
                 .frame(width: 200)
 
+                Picker("Max results:", selection: $state.params.pageSize) {
+                    Text("20").tag(20)
+                    Text("40").tag(40)
+                    Text("80").tag(80)
+                    Text("200").tag(200)
+                    Text("500").tag(500)
+                }
+                .frame(width: 180)
+
                 Spacer()
 
                 if state.totalResultCount > 0 {

@@ -143,7 +143,7 @@ class BatchState: ObservableObject {
         items.removeAll()
     }
 
-    func startBatch() {
+    func startBatch(appState: AppState) {
         guard !isRunning else { return }
         isRunning = true
         isCancelled = false
@@ -201,6 +201,9 @@ class BatchState: ObservableObject {
                     project.outputDirectory = generation.outputDirectory
                     item.project = project
                     item.status = .completed(pieceCount: generation.actualPieceCount)
+
+                    // Add to main project list so it appears in sidebar
+                    appState.addProject(project)
 
                     // Auto-export if enabled
                     if configuration.autoExport, let dir = configuration.exportDirectory {
