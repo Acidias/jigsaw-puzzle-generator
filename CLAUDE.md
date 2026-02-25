@@ -3,10 +3,11 @@
 Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from images.
 
 ## Build & Run
-- `swift build` to compile
-- `swift run` to launch the app
+- `./build.sh` to compile and launch as a proper .app bundle (required for keyboard input in TextFields)
+- `swift build` to compile only
 - Requires macOS 14+
 - No external dependencies - pure native Swift with Core Graphics
+- App sets `NSApplication.shared.setActivationPolicy(.regular)` at launch so SPM-built executables get full keyboard focus
 
 ## Project Structure
 - `Sources/App/` - App entry point and global state (AppState)
@@ -33,5 +34,5 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 - Adjacency computed from grid position (trivial on a regular grid)
 - Temp output directories cleaned up on re-generation and project removal
 - Export copies PNG files from disk instead of re-encoding (falls back to NSImage for lines overlay)
-- Batch processing: select multiple images, process all with shared grid settings, per-item and overall progress, skip/fail handling, optional auto-export (Cmd+Shift+B or toolbar button)
-- Openverse integration: search Creative Commons images from the batch window, filter by size/category, download selected images into batch queue with licence/attribution preserved through to export metadata JSON
+- Batch processing: select multiple images, process all with shared grid settings, per-item and overall progress, skip/fail handling, optional auto-export (Cmd+Shift+B or toolbar button). Completed batch items are automatically added to the Projects sidebar.
+- Openverse integration: search Creative Commons images from the batch window, filter by size/category/max results (20-500), download selected images into batch queue with licence/attribution preserved through to export metadata JSON
