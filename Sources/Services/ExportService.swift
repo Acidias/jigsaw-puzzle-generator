@@ -27,14 +27,15 @@ enum ExportService {
 
     @MainActor
     static func export(
-        cut: PuzzleCut,
+        imageResult: CutImageResult,
         imageName: String,
         imageWidth: Int,
         imageHeight: Int,
         attribution: ImageAttribution?,
+        configuration: PuzzleConfiguration,
         to directory: URL
     ) throws {
-        let folderName = "\(imageName)_\(cut.configuration.columns)x\(cut.configuration.rows)"
+        let folderName = "\(imageName)_\(configuration.columns)x\(configuration.rows)"
         let puzzleDir = directory.appendingPathComponent(folderName)
         let piecesDir = puzzleDir.appendingPathComponent("pieces")
 
@@ -44,7 +45,7 @@ enum ExportService {
             throw ExportError.directoryCreationFailed(error.localizedDescription)
         }
 
-        for piece in cut.pieces {
+        for piece in imageResult.pieces {
             let filename = "piece_\(piece.pieceIndex).png"
             let destURL = piecesDir.appendingPathComponent(filename)
 
@@ -70,7 +71,7 @@ enum ExportService {
         }
 
         // Export lines overlay if available
-        if let linesImage = cut.linesImage,
+        if let linesImage = imageResult.linesImage,
            let tiffData = linesImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {
@@ -80,11 +81,12 @@ enum ExportService {
 
         // Generate metadata JSON
         let metadata = buildMetadata(
-            cut: cut,
+            imageResult: imageResult,
             imageName: imageName,
             imageWidth: imageWidth,
             imageHeight: imageHeight,
-            attribution: attribution
+            attribution: attribution,
+            configuration: configuration
         )
         do {
             let jsonData = try JSONEncoder().encode(metadata)
@@ -103,13 +105,14 @@ enum ExportService {
 
     @MainActor
     private static func buildMetadata(
-        cut: PuzzleCut,
+        imageResult: CutImageResult,
         imageName: String,
         imageWidth: Int,
         imageHeight: Int,
-        attribution: ImageAttribution?
+        attribution: ImageAttribution?,
+        configuration: PuzzleConfiguration
     ) -> PuzzleMetadata {
-        let pieces = cut.pieces.map { piece in
+        let pieces = imageResult.pieces.map { piece in
             PieceMetadata(
                 id: piece.pieceIndex,
                 type: piece.pieceType.rawValue,
@@ -126,8 +129,8 @@ enum ExportService {
             sourceName: imageName,
             sourceWidth: imageWidth,
             sourceHeight: imageHeight,
-            requestedPieces: cut.configuration.totalPieces,
-            actualPieces: cut.pieces.count,
+            requestedPieces: configuration.totalPieces,
+            actualPieces: imageResult.pieces.count,
             pieces: pieces,
             attribution: attribution
         )

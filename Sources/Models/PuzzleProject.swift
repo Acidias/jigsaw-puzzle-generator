@@ -6,6 +6,7 @@ class PuzzleProject: ObservableObject, Identifiable {
     let id: UUID
     @Published var name: String
     @Published var images: [PuzzleImage] = []
+    @Published var cuts: [PuzzleCut] = []
     let createdAt: Date
 
     init(id: UUID = UUID(), name: String, createdAt: Date = Date()) {

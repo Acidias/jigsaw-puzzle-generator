@@ -1,9 +1,8 @@
 import AppKit
-import Combine
 import Foundation
 
 /// Represents a single source image within a project.
-/// Contains the source image data and a list of puzzle cuts at different grid sizes.
+/// A pure container for the source image data, name, and attribution.
 @MainActor
 class PuzzleImage: ObservableObject, Identifiable {
     let id: UUID
@@ -15,9 +14,6 @@ class PuzzleImage: ObservableObject, Identifiable {
     var sourceImagePath: String?
     /// Attribution and licence info (non-nil for Openverse images).
     var attribution: ImageAttribution?
-    /// Puzzle cuts at different grid sizes.
-    @Published var cuts: [PuzzleCut] = []
-
     /// Image dimensions in pixels (not points) for accurate metadata.
     var imageWidth: Int {
         guard let rep = sourceImage.representations.first else {

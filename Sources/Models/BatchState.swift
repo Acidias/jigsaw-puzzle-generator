@@ -30,8 +30,10 @@ class BatchItem: ObservableObject, Identifiable {
     let attribution: ImageAttribution?
 
     @Published var status: BatchItemStatus = .pending
-    /// Populated after successful generation.
+    /// The PuzzleImage added to the project (set after generation starts).
     var puzzleImage: PuzzleImage?
+    /// The CutImageResult for this item (set after generation starts).
+    var imageResult: CutImageResult?
 
     init(name: String, sourceImage: NSImage, sourceImageURL: URL?, attribution: ImageAttribution? = nil) {
         self.name = name
@@ -140,6 +142,7 @@ class BatchState: ObservableObject {
         for item in items {
             if item.status.isFinished {
                 item.puzzleImage = nil
+                item.imageResult = nil
                 item.status = .pending
             }
         }
@@ -149,8 +152,11 @@ class BatchState: ObservableObject {
             config.validate()
             configuration.puzzleConfig = config
 
+            // First pass: add images to project and create the cut
+            let cut = PuzzleCut(configuration: config)
+            var pendingItems: [(BatchItem, CutImageResult)] = []
+
             for item in items {
-                if isCancelled { break }
                 guard case .pending = item.status else { continue }
 
                 if let reason = skipReason(for: item) {
@@ -158,55 +164,77 @@ class BatchState: ObservableObject {
                     continue
                 }
 
+                // Create PuzzleImage and add to project
+                let puzzleImage = PuzzleImage(
+                    name: item.name,
+                    sourceImage: item.sourceImage,
+                    sourceImageURL: item.sourceImageURL
+                )
+                puzzleImage.attribution = item.attribution
+                item.puzzleImage = puzzleImage
+
+                appState.addImage(puzzleImage, to: project)
+                ProjectStore.copySourceImage(puzzleImage, to: project)
+
+                // Create CutImageResult
+                let imageResult = CutImageResult(imageID: puzzleImage.id, imageName: puzzleImage.name)
+                item.imageResult = imageResult
+                cut.imageResults.append(imageResult)
+                pendingItems.append((item, imageResult))
+            }
+
+            // Only add cut if there are items to process
+            if !pendingItems.isEmpty {
+                project.cuts.append(cut)
+                appState.saveProject(project)
+            }
+
+            // Second pass: generate puzzles
+            for (item, imageResult) in pendingItems {
+                if isCancelled { break }
+
+                guard let puzzleImage = item.puzzleImage else { continue }
+
                 item.status = .generating(progress: 0)
+                imageResult.isGenerating = true
+                imageResult.progress = 0.0
 
                 let generator = PuzzleGenerator()
                 let result = await generator.generate(
-                    image: item.sourceImage,
-                    imageURL: item.sourceImageURL,
+                    image: puzzleImage.sourceImage,
+                    imageURL: puzzleImage.sourceImageURL,
                     configuration: config,
                     onProgress: { progress in
                         Task { @MainActor in
                             item.status = .generating(progress: progress)
+                            imageResult.progress = progress
                         }
                     }
                 )
 
                 switch result {
                 case .success(let generation):
-                    // Create image + cut
-                    let puzzleImage = PuzzleImage(
-                        name: item.name,
-                        sourceImage: item.sourceImage,
-                        sourceImageURL: item.sourceImageURL
-                    )
-                    puzzleImage.attribution = item.attribution
+                    imageResult.pieces = generation.pieces
+                    imageResult.linesImage = generation.linesImage
+                    imageResult.outputDirectory = generation.outputDirectory
 
-                    let cut = PuzzleCut(configuration: config)
-                    cut.pieces = generation.pieces
-                    cut.linesImage = generation.linesImage
-                    cut.outputDirectory = generation.outputDirectory
-                    puzzleImage.cuts.append(cut)
-
-                    item.puzzleImage = puzzleImage
                     item.status = .completed(pieceCount: generation.actualPieceCount)
 
-                    // Add to target project and persist
-                    appState.addImage(puzzleImage, to: project)
-                    ProjectStore.copySourceImage(puzzleImage, to: project)
-                    ProjectStore.moveGeneratedPieces(for: cut, imageID: puzzleImage.id, in: project)
-                    ProjectStore.saveLinesOverlay(for: cut, imageID: puzzleImage.id, in: project)
+                    // Persist
+                    ProjectStore.moveGeneratedPieces(for: imageResult, cutID: cut.id, in: project)
+                    ProjectStore.saveLinesOverlay(for: imageResult, cutID: cut.id, in: project)
                     appState.saveProject(project)
 
                     // Auto-export if enabled
                     if configuration.autoExport, let dir = configuration.exportDirectory {
                         do {
                             try ExportService.export(
-                                cut: cut,
+                                imageResult: imageResult,
                                 imageName: puzzleImage.name,
                                 imageWidth: puzzleImage.imageWidth,
                                 imageHeight: puzzleImage.imageHeight,
                                 attribution: puzzleImage.attribution,
+                                configuration: config,
                                 to: dir
                             )
                         } catch {
@@ -215,8 +243,12 @@ class BatchState: ObservableObject {
                     }
 
                 case .failure(let error):
+                    imageResult.lastError = error.errorDescription
                     item.status = .failed(reason: error.errorDescription ?? "Unknown error")
                 }
+
+                imageResult.isGenerating = false
+                imageResult.progress = 1.0
             }
 
             isRunning = false
@@ -229,28 +261,28 @@ class BatchState: ObservableObject {
 
     func exportAll(to directory: URL) {
         for item in items {
-            guard case .completed = item.status, let puzzleImage = item.puzzleImage else { continue }
-            for cut in puzzleImage.cuts {
-                try? ExportService.export(
-                    cut: cut,
-                    imageName: puzzleImage.name,
-                    imageWidth: puzzleImage.imageWidth,
-                    imageHeight: puzzleImage.imageHeight,
-                    attribution: puzzleImage.attribution,
-                    to: directory
-                )
-            }
+            guard case .completed = item.status,
+                  let puzzleImage = item.puzzleImage,
+                  let imageResult = item.imageResult else { continue }
+            // Find the configuration from any cut containing this result
+            let config = configuration.puzzleConfig
+            try? ExportService.export(
+                imageResult: imageResult,
+                imageName: puzzleImage.name,
+                imageWidth: puzzleImage.imageWidth,
+                imageHeight: puzzleImage.imageHeight,
+                attribution: puzzleImage.attribution,
+                configuration: config,
+                to: directory
+            )
         }
     }
 
     func cleanup() {
         for item in items {
-            if let img = item.puzzleImage {
-                for cut in img.cuts {
-                    cut.cleanupOutputDirectory()
-                }
-            }
+            item.imageResult?.cleanupOutputDirectory()
             item.puzzleImage = nil
+            item.imageResult = nil
         }
     }
 

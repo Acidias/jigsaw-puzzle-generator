@@ -6,6 +6,7 @@ struct ProjectManifest: Codable {
     var name: String
     let createdAt: Date
     var images: [ImageManifest]
+    var cuts: [CutManifest]
 }
 
 /// Codable manifest for a single image within a project.
@@ -14,13 +15,20 @@ struct ImageManifest: Codable {
     var name: String
     var sourceImageFilename: String
     var attribution: ImageAttribution?
-    var cuts: [CutManifest]
 }
 
-/// Codable manifest for one puzzle cut (a specific grid size and its pieces).
+/// Codable manifest for one puzzle cut (a grid configuration applied to all project images).
 struct CutManifest: Codable {
     let id: UUID
     var configuration: PuzzleConfiguration
+    var imageResults: [CutImageResultManifest]
+}
+
+/// Codable manifest for one image's results within a cut.
+struct CutImageResultManifest: Codable {
+    let id: UUID
+    let imageID: UUID
+    var imageName: String
     var pieces: [PieceManifest]
     var hasLinesOverlay: Bool
 }

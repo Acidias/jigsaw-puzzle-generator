@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ConfigurationPanel: View {
-    @ObservedObject var image: PuzzleImage
+    @ObservedObject var project: PuzzleProject
     @EnvironmentObject var appState: AppState
 
     @State private var columns: Int = 5
@@ -53,7 +53,7 @@ struct ConfigurationPanel: View {
                 }
 
                 HStack {
-                    Text("\(columns * rows) pieces")
+                    Text("\(columns * rows) pieces per image, \(project.images.count) image\(project.images.count == 1 ? "" : "s")")
                         .font(.callout)
                         .foregroundStyle(.secondary)
 
@@ -66,7 +66,7 @@ struct ConfigurationPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .disabled(isGenerating)
+                    .disabled(isGenerating || project.images.isEmpty)
                 }
             }
             .padding(8)
@@ -79,7 +79,7 @@ struct ConfigurationPanel: View {
     }
 
     private func generatePuzzle() {
-        guard !isGenerating else { return }
+        guard !isGenerating, !project.images.isEmpty else { return }
 
         var config = PuzzleConfiguration(columns: columns, rows: rows)
         config.validate()
@@ -87,51 +87,72 @@ struct ConfigurationPanel: View {
         rows = config.rows
 
         let cut = PuzzleCut(configuration: config)
-        image.cuts.append(cut)
+
+        // Create a CutImageResult for each image in the project
+        for image in project.images {
+            let imageResult = CutImageResult(imageID: image.id, imageName: image.name)
+            cut.imageResults.append(imageResult)
+        }
+
+        project.cuts.append(cut)
 
         // Select the new cut in the sidebar
         appState.selectedCutID = cut.id
+        appState.selectedCutImageID = nil
         appState.selectedPieceID = nil
 
         isGenerating = true
 
         Task {
-            cut.isGenerating = true
-            cut.progress = 0.0
+            for imageResult in cut.imageResults {
+                guard let sourceImage = appState.sourceImage(for: imageResult, in: project) else {
+                    imageResult.lastError = "Source image not found"
+                    continue
+                }
 
-            let generator = PuzzleGenerator()
-            let result = await generator.generate(
-                image: image.sourceImage,
-                imageURL: image.sourceImageURL,
-                configuration: config,
-                onProgress: { progress in
-                    Task { @MainActor in
-                        cut.progress = progress
+                imageResult.isGenerating = true
+                imageResult.progress = 0.0
+
+                let generator = PuzzleGenerator()
+                let result = await generator.generate(
+                    image: sourceImage.sourceImage,
+                    imageURL: sourceImage.sourceImageURL,
+                    configuration: config,
+                    onProgress: { progress in
+                        Task { @MainActor in
+                            imageResult.progress = progress
+                        }
                     }
-                }
-            )
+                )
 
-            switch result {
-            case .success(let generation):
-                cut.pieces = generation.pieces
-                cut.linesImage = generation.linesImage
-                cut.outputDirectory = generation.outputDirectory
+                switch result {
+                case .success(let generation):
+                    imageResult.pieces = generation.pieces
+                    imageResult.linesImage = generation.linesImage
+                    imageResult.outputDirectory = generation.outputDirectory
 
-                // Persist
-                if let project = appState.projectForImage(id: image.id) {
-                    ProjectStore.moveGeneratedPieces(for: cut, imageID: image.id, in: project)
-                    ProjectStore.saveLinesOverlay(for: cut, imageID: image.id, in: project)
+                    // Persist
+                    ProjectStore.moveGeneratedPieces(for: imageResult, cutID: cut.id, in: project)
+                    ProjectStore.saveLinesOverlay(for: imageResult, cutID: cut.id, in: project)
                     appState.saveProject(project)
+
+                case .failure(let error):
+                    imageResult.lastError = error.errorDescription
                 }
-            case .failure(let error):
-                cut.lastError = error.errorDescription
-                errorMessage = error.errorDescription
+
+                imageResult.isGenerating = false
+                imageResult.progress = 1.0
+            }
+
+            // Show error if all images failed
+            let allFailed = cut.imageResults.allSatisfy { $0.lastError != nil }
+            if allFailed {
+                errorMessage = "All images failed to generate. Check the sidebar for details."
                 showErrorAlert = true
                 // Remove the failed cut
-                image.cuts.removeAll { $0.id == cut.id }
+                project.cuts.removeAll { $0.id == cut.id }
             }
-            cut.isGenerating = false
-            cut.progress = 1.0
+
             isGenerating = false
         }
     }

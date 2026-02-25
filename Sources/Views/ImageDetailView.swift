@@ -1,43 +1,36 @@
 import SwiftUI
 
-struct ImageDetailView: View {
-    @ObservedObject var image: PuzzleImage
+/// Small thumbnail card for a source image in the project detail grid.
+struct ProjectImageCard: View {
+    let image: PuzzleImage
+    let onRemove: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Source image preview
-                Image(nsImage: image.sourceImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxHeight: 500)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .shadow(radius: 4)
-                    .padding(.horizontal)
+        VStack(spacing: 6) {
+            Image(nsImage: image.sourceImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: 120)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                // Image info
-                HStack(spacing: 24) {
-                    Label("\(image.imageWidth) x \(image.imageHeight) px", systemImage: "ruler")
-                    if let url = image.sourceImageURL {
-                        Label(url.lastPathComponent, systemImage: "doc")
-                    }
-                    if !image.cuts.isEmpty {
-                        Label("\(image.cuts.count) puzzle\(image.cuts.count == 1 ? "" : "s") generated", systemImage: "puzzlepiece")
-                    }
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-                Divider()
-
-                // Generate a new puzzle cut
-                ConfigurationPanel(image: image)
-                    .padding(.horizontal)
-
-                Spacer(minLength: 20)
+            VStack(spacing: 2) {
+                Text(image.name)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                Text("\(image.imageWidth) x \(image.imageHeight)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(.vertical)
         }
-        .navigationTitle(image.name)
+        .padding(6)
+        .background(Color.primary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contextMenu {
+            Button("Remove Image") {
+                onRemove()
+            }
+        }
     }
 }

@@ -4,8 +4,8 @@ enum SidebarItem: Hashable {
     case batchLocal
     case batchOpenverse
     case project(UUID)
-    case image(UUID)
     case cut(UUID)
+    case cutImage(UUID)
     case piece(UUID)
 }
 
@@ -48,44 +48,44 @@ struct SidebarView: View {
         switch item {
         case .batchLocal, .batchOpenverse:
             appState.selectedProjectID = nil
-            appState.selectedImageID = nil
             appState.selectedCutID = nil
+            appState.selectedCutImageID = nil
             appState.selectedPieceID = nil
 
         case .project(let id):
             appState.selectedProjectID = id
-            appState.selectedImageID = nil
             appState.selectedCutID = nil
+            appState.selectedCutImageID = nil
             appState.selectedPieceID = nil
 
-        case .image(let imageID):
-            if let project = appState.projectForImage(id: imageID) {
+        case .cut(let cutID):
+            if let project = appState.projectForCut(id: cutID) {
                 appState.selectedProjectID = project.id
-                appState.selectedImageID = imageID
-                appState.selectedCutID = nil
+                appState.selectedCutID = cutID
+                appState.selectedCutImageID = nil
                 appState.selectedPieceID = nil
             }
 
-        case .cut(let cutID):
-            if let result = appState.imageForCut(id: cutID) {
+        case .cutImage(let cutImageID):
+            if let result = appState.cutForCutImage(id: cutImageID) {
                 appState.selectedProjectID = result.project.id
-                appState.selectedImageID = result.image.id
-                appState.selectedCutID = cutID
+                appState.selectedCutID = result.cut.id
+                appState.selectedCutImageID = cutImageID
                 appState.selectedPieceID = nil
             }
 
         case .piece(let pieceID):
-            if let result = appState.cutForPiece(id: pieceID) {
+            if let result = appState.cutImageForPiece(id: pieceID) {
                 appState.selectedProjectID = result.project.id
-                appState.selectedImageID = result.image.id
                 appState.selectedCutID = result.cut.id
+                appState.selectedCutImageID = result.imageResult.id
                 appState.selectedPieceID = pieceID
             }
 
         case nil:
             appState.selectedProjectID = nil
-            appState.selectedImageID = nil
             appState.selectedCutID = nil
+            appState.selectedCutImageID = nil
             appState.selectedPieceID = nil
         }
     }
@@ -111,25 +111,31 @@ struct SidebarView: View {
     }
 }
 
-/// Project row: Project > Images > Cuts > Pieces.
+/// Project row: Project > Cuts > CutImageResults > Pieces.
 private struct ProjectRow: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var project: PuzzleProject
 
     var body: some View {
         DisclosureGroup {
-            if project.images.isEmpty {
-                Text("No images yet")
+            if project.cuts.isEmpty {
+                Text("No puzzles generated yet")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .italic()
             } else {
-                ForEach(project.images) { image in
-                    ImageRow(image: image)
+                ForEach(project.cuts) { cut in
+                    CutRow(cut: cut)
                         .contextMenu {
                             Button("Remove") {
-                                appState.removeImage(image, from: project)
+                                ProjectStore.deleteCut(projectID: project.id, cutID: cut.id)
+                                project.cuts.removeAll { $0.id == cut.id }
                                 appState.saveProject(project)
+                                if appState.selectedCutID == cut.id {
+                                    appState.selectedCutID = nil
+                                    appState.selectedCutImageID = nil
+                                    appState.selectedPieceID = nil
+                                }
                             }
                         }
                 }
@@ -154,57 +160,20 @@ private struct ProjectRow: View {
     }
 }
 
-/// Image row showing cuts underneath.
-private struct ImageRow: View {
-    @ObservedObject var image: PuzzleImage
-
-    var body: some View {
-        DisclosureGroup {
-            if image.cuts.isEmpty {
-                Text("No puzzles generated yet")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .italic()
-            } else {
-                ForEach(image.cuts) { cut in
-                    CutRow(cut: cut)
-                }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "photo")
-                    .foregroundStyle(.teal)
-                Text(image.name)
-                    .fontWeight(.medium)
-            }
-            .tag(SidebarItem.image(image.id))
-        }
-    }
-}
-
-/// Cut row (e.g. "5x5 - 25 pieces") showing pieces underneath.
+/// Cut row showing image results underneath.
 private struct CutRow: View {
     @ObservedObject var cut: PuzzleCut
 
     var body: some View {
         DisclosureGroup {
-            if cut.hasGeneratedPieces {
-                ForEach(cut.pieces) { piece in
-                    HStack(spacing: 8) {
-                        pieceTypeIcon(piece.pieceType)
-                        Text(piece.displayLabel)
-                            .font(.callout)
-                    }
-                    .tag(SidebarItem.piece(piece.id))
-                }
-            } else if cut.isGenerating {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Generating... \(Int(cut.progress * 100))%")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .italic()
+            if cut.imageResults.isEmpty {
+                Text("No images processed")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                ForEach(cut.imageResults) { imageResult in
+                    CutImageRow(imageResult: imageResult)
                 }
             }
         } label: {
@@ -213,8 +182,59 @@ private struct CutRow: View {
                     .foregroundStyle(.purple)
                 Text(cut.displayName)
                     .fontWeight(.medium)
+                if cut.isGenerating {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
             .tag(SidebarItem.cut(cut.id))
+        }
+    }
+}
+
+/// CutImageResult row showing pieces underneath.
+private struct CutImageRow: View {
+    @ObservedObject var imageResult: CutImageResult
+
+    var body: some View {
+        DisclosureGroup {
+            if imageResult.hasGeneratedPieces {
+                ForEach(imageResult.pieces) { piece in
+                    HStack(spacing: 8) {
+                        pieceTypeIcon(piece.pieceType)
+                        Text(piece.displayLabel)
+                            .font(.callout)
+                    }
+                    .tag(SidebarItem.piece(piece.id))
+                }
+            } else if imageResult.isGenerating {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Generating... \(Int(imageResult.progress * 100))%")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+            } else if let error = imageResult.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "photo")
+                    .foregroundStyle(.teal)
+                Text(imageResult.imageName)
+                    .fontWeight(.medium)
+                if imageResult.hasGeneratedPieces {
+                    Text("\(imageResult.pieces.count) pieces")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .tag(SidebarItem.cutImage(imageResult.id))
         }
     }
 

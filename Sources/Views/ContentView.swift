@@ -71,11 +71,11 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
-                if let cut = appState.selectedCut, cut.hasGeneratedPieces {
+                if let cutImage = appState.selectedCutImage, cutImage.hasGeneratedPieces {
                     Button {
-                        exportAll()
+                        exportCutImage()
                     } label: {
-                        Label("Export All", systemImage: "square.and.arrow.up")
+                        Label("Export", systemImage: "square.and.arrow.up")
                     }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                 }
@@ -116,45 +116,45 @@ struct ContentView: View {
             guard let id = newID else { return }
             if let pieceID = appState.selectedPieceID {
                 sidebarSelection = .piece(pieceID)
+            } else if let cutImageID = appState.selectedCutImageID {
+                sidebarSelection = .cutImage(cutImageID)
             } else if let cutID = appState.selectedCutID {
                 sidebarSelection = .cut(cutID)
-            } else if let imageID = appState.selectedImageID {
-                sidebarSelection = .image(imageID)
             } else {
                 sidebarSelection = .project(id)
-            }
-        }
-        .onChange(of: appState.selectedImageID) { _, newID in
-            if let id = newID {
-                if appState.selectedPieceID != nil {
-                    // piece change handler will set sidebar
-                } else if appState.selectedCutID != nil {
-                    // cut change handler will set sidebar
-                } else {
-                    sidebarSelection = .image(id)
-                }
-            } else if let projectID = appState.selectedProjectID {
-                sidebarSelection = .project(projectID)
             }
         }
         .onChange(of: appState.selectedCutID) { _, newID in
             if let id = newID {
                 if let pieceID = appState.selectedPieceID {
                     sidebarSelection = .piece(pieceID)
+                } else if let cutImageID = appState.selectedCutImageID {
+                    sidebarSelection = .cutImage(cutImageID)
                 } else {
                     sidebarSelection = .cut(id)
                 }
-            } else if let imageID = appState.selectedImageID {
-                sidebarSelection = .image(imageID)
+            } else if let projectID = appState.selectedProjectID {
+                sidebarSelection = .project(projectID)
+            }
+        }
+        .onChange(of: appState.selectedCutImageID) { _, newID in
+            if let id = newID {
+                if let pieceID = appState.selectedPieceID {
+                    sidebarSelection = .piece(pieceID)
+                } else {
+                    sidebarSelection = .cutImage(id)
+                }
+            } else if let cutID = appState.selectedCutID {
+                sidebarSelection = .cut(cutID)
             }
         }
         .onChange(of: appState.selectedPieceID) { _, newID in
             if let id = newID {
                 sidebarSelection = .piece(id)
+            } else if let cutImageID = appState.selectedCutImageID {
+                sidebarSelection = .cutImage(cutImageID)
             } else if let cutID = appState.selectedCutID {
                 sidebarSelection = .cut(cutID)
-            } else if let imageID = appState.selectedImageID {
-                sidebarSelection = .image(imageID)
             }
         }
     }
@@ -163,10 +163,13 @@ struct ContentView: View {
     private var projectDetailView: some View {
         if let piece = appState.selectedPiece {
             PieceDetailView(piece: piece)
-        } else if let cut = appState.selectedCut, let image = appState.selectedImage {
-            CutDetailView(image: image, cut: cut)
-        } else if let image = appState.selectedImage {
-            ImageDetailView(image: image)
+        } else if let cutImage = appState.selectedCutImage,
+                  let cut = appState.selectedCut,
+                  let project = appState.selectedProject,
+                  let source = appState.sourceImage(for: cutImage, in: project) {
+            CutImageDetailView(sourceImage: source, imageResult: cutImage, configuration: cut.configuration)
+        } else if let cut = appState.selectedCut, let project = appState.selectedProject {
+            CutOverviewView(cut: cut, project: project)
         } else if let project = appState.selectedProject {
             ProjectDetailView(project: project)
         } else {
@@ -260,9 +263,11 @@ struct ContentView: View {
         return false
     }
 
-    private func exportAll() {
-        guard let cut = appState.selectedCut, cut.hasGeneratedPieces,
-              let image = appState.selectedImage else { return }
+    private func exportCutImage() {
+        guard let cutImage = appState.selectedCutImage, cutImage.hasGeneratedPieces,
+              let cut = appState.selectedCut,
+              let project = appState.selectedProject,
+              let source = appState.sourceImage(for: cutImage, in: project) else { return }
 
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -273,42 +278,76 @@ struct ContentView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            try ExportService.export(cut: cut, imageName: image.name, imageWidth: image.imageWidth, imageHeight: image.imageHeight, attribution: image.attribution, to: url)
+            try ExportService.export(
+                imageResult: cutImage,
+                imageName: source.name,
+                imageWidth: source.imageWidth,
+                imageHeight: source.imageHeight,
+                attribution: source.attribution,
+                configuration: cut.configuration,
+                to: url
+            )
         } catch {
             showError(error.localizedDescription)
         }
     }
 }
 
-/// Shows when a project is selected but no image is selected.
+/// Shows when a project is selected - source image grid + configuration panel.
 struct ProjectDetailView: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject var project: PuzzleProject
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "folder.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue.opacity(0.5))
-            Text(project.name)
-                .font(.largeTitle)
-                .fontWeight(.semibold)
-            if project.images.isEmpty {
-                Text("This project has no images yet")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                Text("Import an image with Cmd+O or drag and drop")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-            } else {
-                Text("\(project.images.count) image\(project.images.count == 1 ? "" : "s")")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                Text("Select an image from the sidebar to view it")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
+        ScrollView {
+            VStack(spacing: 20) {
+                if project.images.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 64))
+                            .foregroundStyle(.blue.opacity(0.5))
+                        Text(project.name)
+                            .font(.largeTitle)
+                            .fontWeight(.semibold)
+                        Text("This project has no images yet")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                        Text("Import an image with Cmd+O or drag and drop")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                } else {
+                    // Source images grid
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("\(project.images.count) image\(project.images.count == 1 ? "" : "s")")
+                            .font(.headline)
+                            .padding(.horizontal)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                            ForEach(project.images) { image in
+                                ProjectImageCard(image: image) {
+                                    appState.removeImage(image, from: project)
+                                    appState.saveProject(project)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    Divider()
+
+                    // Generate puzzle for all images
+                    ConfigurationPanel(project: project)
+                        .padding(.horizontal)
+                }
+
+                Spacer(minLength: 20)
             }
+            .padding(.vertical)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle(project.name)
     }
 }
 

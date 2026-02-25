@@ -2,43 +2,60 @@ import AppKit
 import Combine
 import Foundation
 
-/// One puzzle generation result for an image - a specific grid size and its pieces.
-/// An image can have multiple cuts at different grid sizes (e.g. 3x3, 5x5, 10x10).
+/// A project-level puzzle cut - a grid configuration applied to all images in a project.
+/// Contains a CutImageResult per source image with pieces and overlay for each.
 @MainActor
 class PuzzleCut: ObservableObject, Identifiable {
     let id: UUID
     @Published var configuration: PuzzleConfiguration
-    @Published var pieces: [PuzzlePiece] = []
-    @Published var isGenerating: Bool = false
-    @Published var progress: Double = 0.0
-    /// The puzzle cut lines overlay image.
-    @Published var linesImage: NSImage?
-    /// Last generation error message, shown to the user.
-    @Published var lastError: String?
-    /// Path to the output directory (temp, before persistence).
-    var outputDirectory: URL?
+    @Published var imageResults: [CutImageResult] = []
 
     init(id: UUID = UUID(), configuration: PuzzleConfiguration) {
         self.id = id
         self.configuration = configuration
     }
 
-    var hasGeneratedPieces: Bool { !pieces.isEmpty }
+    /// True if any image result is currently generating.
+    var isGenerating: Bool {
+        imageResults.contains { $0.isGenerating }
+    }
 
-    /// Human-readable label, e.g. "5x5 (25 pieces)".
+    /// Overall progress across all image results (0.0 to 1.0).
+    var overallProgress: Double {
+        guard !imageResults.isEmpty else { return 0 }
+        let total = imageResults.reduce(0.0) { sum, result in
+            if result.hasGeneratedPieces || result.lastError != nil {
+                return sum + 1.0
+            }
+            return sum + result.progress
+        }
+        return total / Double(imageResults.count)
+    }
+
+    /// Total piece count across all image results.
+    var totalPieceCount: Int {
+        imageResults.reduce(0) { $0 + $1.pieces.count }
+    }
+
+    var hasGeneratedPieces: Bool {
+        imageResults.contains { $0.hasGeneratedPieces }
+    }
+
+    /// Human-readable label, e.g. "5x5 - 50 pieces".
     var displayName: String {
         let grid = "\(configuration.columns)x\(configuration.rows)"
-        if hasGeneratedPieces {
-            return "\(grid) - \(pieces.count) pieces"
+        let count = totalPieceCount
+        if count > 0 {
+            return "\(grid) - \(count) pieces"
         }
         return grid
     }
 
-    /// Removes the temp output directory from disk.
-    func cleanupOutputDirectory() {
-        guard let dir = outputDirectory else { return }
-        try? FileManager.default.removeItem(at: dir)
-        outputDirectory = nil
+    /// Removes temp output directories from all image results.
+    func cleanupOutputDirectories() {
+        for result in imageResults {
+            result.cleanupOutputDirectory()
+        }
     }
 }
 
