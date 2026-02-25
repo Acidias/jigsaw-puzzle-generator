@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -107,6 +108,22 @@ struct ContentView: View {
                 sidebarSelection = .project(projectID)
             }
         }
+        .onChange(of: sidebarSelection) { _, newValue in
+            guard let newValue else { return }
+            switch newValue {
+            case .batchLocal, .batchOpenverse:
+                activateWindowForBatchInput()
+            default:
+                break
+            }
+        }
+    }
+
+    private func activateWindowForBatchInput() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+        // Clear any stale first responder from the sidebar so text fields can take focus reliably.
+        NSApp.keyWindow?.makeFirstResponder(nil)
     }
 
     @ViewBuilder
