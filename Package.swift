@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "JigsawPuzzleGenerator",
-            path: "Sources"
+            path: "Sources",
+            exclude: ["Resources/Info.plist"]
         )
     ]
 )

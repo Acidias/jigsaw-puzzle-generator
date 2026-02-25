@@ -18,10 +18,9 @@ struct ContentView: View {
     }
 
     var body: some View {
-        HSplitView {
+        NavigationSplitView {
             SidebarView(selection: $sidebarSelection)
-                .frame(minWidth: 180, maxWidth: 250)
-
+        } detail: {
             VStack(spacing: 0) {
                 // Detail content
                 Group {

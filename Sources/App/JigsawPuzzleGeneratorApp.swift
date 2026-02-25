@@ -1,8 +1,14 @@
+import AppKit
 import SwiftUI
 
 @main
 struct JigsawPuzzleGeneratorApp: App {
     @StateObject private var appState = AppState()
+
+    init() {
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate()
+    }
 
     var body: some Scene {
         WindowGroup("Jigsaw Puzzle Generator") {
