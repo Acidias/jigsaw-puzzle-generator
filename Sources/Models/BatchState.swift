@@ -128,17 +128,7 @@ class BatchState: ObservableObject {
         }
     }
 
-    func addOpenverseImage(name: String, image: NSImage, imageURL: URL?, attribution: ImageAttribution) {
-        let item = BatchItem(
-            name: name,
-            sourceImage: image,
-            sourceImageURL: imageURL,
-            attribution: attribution
-        )
-        items.append(item)
-    }
-
-    func clearAll() {
+func clearAll() {
         cleanup()
         items.removeAll()
     }

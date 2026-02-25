@@ -15,7 +15,6 @@ struct ContentView: View {
 
     private var isBatchSelected: Bool {
         if case .batchLocal = sidebarSelection { return true }
-        if case .batchOpenverse = sidebarSelection { return true }
         return false
     }
 
@@ -30,7 +29,7 @@ struct ContentView: View {
                     case .batchLocal:
                         LocalImagesPanel(batchState: batchState)
                     case .batchOpenverse:
-                        OpenversePanel(batchState: batchState, state: openverseState)
+                        OpenversePanel(state: openverseState)
                     default:
                         projectDetailView
                     }

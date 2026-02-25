@@ -59,7 +59,8 @@ class OpenverseSearchState: ObservableObject {
         }
     }
 
-    func downloadSelected(into batchState: BatchState) {
+    /// Downloads selected images and adds them directly to a project as PuzzleImages.
+    func downloadSelected(into project: PuzzleProject, appState: AppState) {
         let selected = results.filter { selectedImageIDs.contains($0.id) }
         guard !selected.isEmpty else { return }
 
@@ -75,12 +76,17 @@ class OpenverseSearchState: ObservableObject {
                     let name = image.title?.trimmingCharacters(in: .whitespaces).isEmpty == false
                         ? image.title!
                         : "openverse_\(image.id)"
-                    batchState.addOpenverseImage(
+
+                    let puzzleImage = PuzzleImage(
                         name: name,
-                        image: nsImage,
-                        imageURL: tempURL,
-                        attribution: image.toAttribution()
+                        sourceImage: nsImage,
+                        sourceImageURL: tempURL
                     )
+                    puzzleImage.attribution = image.toAttribution()
+
+                    appState.addImage(puzzleImage, to: project)
+                    ProjectStore.copySourceImage(puzzleImage, to: project)
+                    appState.saveProject(project)
                 } catch {
                     let name = image.title ?? image.id
                     downloadFailures.append(name)
@@ -88,6 +94,7 @@ class OpenverseSearchState: ObservableObject {
                 downloadCompleted += 1
             }
             isDownloading = false
+            selectedImageIDs = []
         }
     }
 
@@ -120,8 +127,18 @@ class OpenverseSearchState: ObservableObject {
 // MARK: - Openverse Panel
 
 struct OpenversePanel: View {
-    @ObservedObject var batchState: BatchState
+    @EnvironmentObject var appState: AppState
     @ObservedObject var state: OpenverseSearchState
+
+    @State private var showProjectPicker = false
+    @State private var pickerProjectID: UUID?
+    @State private var pickerNewName = ""
+    @State private var pickerMode: ProjectPickerMode = .existing
+
+    fileprivate enum ProjectPickerMode {
+        case existing
+        case createNew
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -278,13 +295,143 @@ struct OpenversePanel: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button("Add to Batch") {
-                    state.downloadSelected(into: batchState)
+                Button("Add to Project...") {
+                    prepareProjectPicker()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(state.selectedImageIDs.isEmpty || state.isDownloading)
             }
             .padding()
+        }
+        .sheet(isPresented: $showProjectPicker) {
+            ProjectPickerSheet(
+                projects: appState.projects,
+                pickerMode: $pickerMode,
+                selectedProjectID: $pickerProjectID,
+                newProjectName: $pickerNewName,
+                imageCount: state.selectedImageIDs.count,
+                onAdd: { project in
+                    state.downloadSelected(into: project, appState: appState)
+                }
+            )
+            .environmentObject(appState)
+        }
+    }
+
+    private func prepareProjectPicker() {
+        if appState.projects.isEmpty {
+            pickerMode = .createNew
+            pickerNewName = state.params.query.trimmingCharacters(in: .whitespaces)
+        } else {
+            pickerMode = .existing
+            pickerProjectID = appState.selectedProject?.id ?? appState.projects.first?.id
+            pickerNewName = state.params.query.trimmingCharacters(in: .whitespaces)
+        }
+        showProjectPicker = true
+    }
+}
+
+// MARK: - Project Picker Sheet
+
+private struct ProjectPickerSheet: View {
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    let projects: [PuzzleProject]
+    @Binding var pickerMode: OpenversePanel.ProjectPickerMode
+    @Binding var selectedProjectID: UUID?
+    @Binding var newProjectName: String
+    let imageCount: Int
+    let onAdd: (PuzzleProject) -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Add to Project")
+                .font(.headline)
+
+            Text("Download \(imageCount) image\(imageCount == 1 ? "" : "s") into a project.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Picker("", selection: $pickerMode) {
+                Text("Existing project").tag(OpenversePanel.ProjectPickerMode.existing)
+                Text("New project").tag(OpenversePanel.ProjectPickerMode.createNew)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+
+            switch pickerMode {
+            case .existing:
+                if projects.isEmpty {
+                    Text("No projects yet. Switch to \"New project\" to create one.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding()
+                } else {
+                    Picker("Project:", selection: $selectedProjectID) {
+                        ForEach(projects) { project in
+                            Text(project.name).tag(Optional(project.id))
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+            case .createNew:
+                TextField("Project name", text: $newProjectName)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal)
+            }
+
+            HStack {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Add \(imageCount) Image\(imageCount == 1 ? "" : "s")") {
+                    let project = resolveProject()
+                    dismiss()
+                    onAdd(project)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canAdd)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal)
+        }
+        .padding()
+        .frame(width: 400)
+    }
+
+    private var canAdd: Bool {
+        switch pickerMode {
+        case .existing:
+            return selectedProjectID != nil
+        case .createNew:
+            return !newProjectName.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
+    private func resolveProject() -> PuzzleProject {
+        switch pickerMode {
+        case .existing:
+            if let id = selectedProjectID, let project = projects.first(where: { $0.id == id }) {
+                return project
+            }
+            // Fallback: create new
+            let project = PuzzleProject(name: "Openverse Images")
+            appState.addProject(project)
+            appState.saveProject(project)
+            return project
+
+        case .createNew:
+            let name = newProjectName.trimmingCharacters(in: .whitespaces)
+            let project = PuzzleProject(name: name.isEmpty ? "Openverse Images" : name)
+            appState.addProject(project)
+            appState.saveProject(project)
+            return project
         }
     }
 }

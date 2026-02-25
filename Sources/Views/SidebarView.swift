@@ -14,10 +14,10 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: $selection) {
-            Section("Batch Processing") {
-                Label("Local Images", systemImage: "folder")
+            Section("Import") {
+                Label("Batch Processing", systemImage: "square.stack")
                     .tag(SidebarItem.batchLocal)
-                Label("Openverse", systemImage: "globe")
+                Label("Openverse Search", systemImage: "globe")
                     .tag(SidebarItem.batchOpenverse)
             }
 
