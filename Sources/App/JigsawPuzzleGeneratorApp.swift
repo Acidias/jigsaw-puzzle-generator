@@ -37,6 +37,7 @@ class AppState: ObservableObject {
     }
 
     func removeProject(_ project: PuzzleProject) {
+        project.cleanupOutputDirectory()
         projects.removeAll { $0.id == project.id }
         if selectedProjectID == project.id {
             selectedProjectID = projects.first?.id

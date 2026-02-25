@@ -74,15 +74,22 @@ struct PieceDetailView: View {
     }
 
     private func exportPiece() {
-        guard let image = piece.image else { return }
-
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "piece_\(piece.pieceIndex).png"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        if let tiffData = image.tiffRepresentation,
+        // Fast path: copy the file directly from disk
+        if let sourcePath = piece.imagePath,
+           FileManager.default.fileExists(atPath: sourcePath.path) {
+            try? FileManager.default.copyItem(at: sourcePath, to: url)
+            return
+        }
+
+        // Fallback: re-encode from NSImage
+        if let image = piece.image,
+           let tiffData = image.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {
             try? pngData.write(to: url)

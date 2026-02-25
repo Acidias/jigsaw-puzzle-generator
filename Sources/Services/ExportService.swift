@@ -12,20 +12,25 @@ enum ExportService {
         do {
             try FileManager.default.createDirectory(at: piecesDir, withIntermediateDirectories: true)
 
-            // Export each piece as PNG
+            // Export each piece as PNG - copy from disk when possible
             for piece in project.pieces {
-                guard let image = piece.image,
-                      let tiffData = image.tiffRepresentation,
-                      let bitmap = NSBitmapImageRep(data: tiffData),
-                      let pngData = bitmap.representation(using: .png, properties: [:])
-                else { continue }
-
                 let filename = "piece_\(piece.pieceIndex).png"
-                let fileURL = piecesDir.appendingPathComponent(filename)
-                try pngData.write(to: fileURL)
+                let destURL = piecesDir.appendingPathComponent(filename)
+
+                if let sourcePath = piece.imagePath,
+                   FileManager.default.fileExists(atPath: sourcePath.path) {
+                    // Fast path: copy the existing PNG file directly
+                    try FileManager.default.copyItem(at: sourcePath, to: destURL)
+                } else if let image = piece.image,
+                          let tiffData = image.tiffRepresentation,
+                          let bitmap = NSBitmapImageRep(data: tiffData),
+                          let pngData = bitmap.representation(using: .png, properties: [:]) {
+                    // Fallback: re-encode from NSImage
+                    try pngData.write(to: destURL)
+                }
             }
 
-            // Export lines overlay if available
+            // Export lines overlay if available (always re-encode since it's an NSImage)
             if let linesImage = project.linesImage,
                let tiffData = linesImage.tiffRepresentation,
                let bitmap = NSBitmapImageRep(data: tiffData),

@@ -4,6 +4,8 @@ struct ConfigurationPanel: View {
     @ObservedObject var project: PuzzleProject
     @EnvironmentObject var appState: AppState
 
+    @State private var showErrorAlert = false
+
     var body: some View {
         GroupBox("Puzzle Configuration") {
             VStack(spacing: 16) {
@@ -82,6 +84,11 @@ struct ConfigurationPanel: View {
             }
             .padding(8)
         }
+        .alert("Generation Failed", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(project.lastError ?? "An unknown error occurred.")
+        }
     }
 
     private func generatePuzzle() {
@@ -92,7 +99,11 @@ struct ConfigurationPanel: View {
             project.progress = 0.0
             project.pieces = []
             project.linesImage = nil
+            project.lastError = nil
             appState.selectedPieceID = nil
+
+            // Clean up previous output directory before generating
+            project.cleanupOutputDirectory()
 
             var config = project.configuration
             config.validate()
@@ -110,9 +121,14 @@ struct ConfigurationPanel: View {
                 }
             )
 
-            if let result = result {
-                project.pieces = result.pieces
-                project.linesImage = result.linesImage
+            switch result {
+            case .success(let generation):
+                project.pieces = generation.pieces
+                project.linesImage = generation.linesImage
+                project.outputDirectory = generation.outputDirectory
+            case .failure(let error):
+                project.lastError = error.errorDescription
+                showErrorAlert = true
             }
             project.isGenerating = false
             project.progress = 1.0

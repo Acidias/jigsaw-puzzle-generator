@@ -26,8 +26,14 @@ struct PuzzlePiece: Identifiable, Equatable {
     let pieceType: PieceType
     /// Piecemaker neighbour piece IDs.
     let neighbourIDs: [Int]
-    /// The extracted piece image (with transparency around the jigsaw shape).
-    var image: NSImage?
+    /// Path to the piece image file on disk (lazy loading).
+    let imagePath: URL?
+
+    /// The extracted piece image, loaded lazily from disk on first access.
+    var image: NSImage? {
+        guard let imagePath else { return nil }
+        return NSImage(contentsOf: imagePath)
+    }
 
     /// Human-readable label for display in the sidebar.
     var displayLabel: String {

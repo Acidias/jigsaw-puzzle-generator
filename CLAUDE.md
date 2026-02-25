@@ -21,6 +21,9 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 ## Key Concepts
 - Uses piecemaker library for proper jigsaw shapes (bezier curves, tabs/blanks)
 - Swift app calls Python script as subprocess, reads JSON metadata from stdout
-- Piece images and lines overlay produced by piecemaker, loaded as NSImages
+- Piece images loaded lazily from disk (imagePath on PuzzlePiece) to keep memory low for large puzzles
 - Grid size: configurable from 3x3 to 100x100 (rows x cols passed as total piece count)
 - Pieces identified by numeric IDs with bounding boxes and neighbour lists
+- PuzzleGenerator returns Result<GenerationResult, GenerationError> with specific error cases
+- Temp output directories cleaned up on re-generation and project removal
+- Export copies PNG files from disk instead of re-encoding (falls back to NSImage for lines overlay)

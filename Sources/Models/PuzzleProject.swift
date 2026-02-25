@@ -16,6 +16,10 @@ class PuzzleProject: ObservableObject, Identifiable {
     @Published var progress: Double = 0.0
     /// The puzzle cut lines overlay image from piecemaker.
     @Published var linesImage: NSImage?
+    /// Last generation error message, shown to the user.
+    @Published var lastError: String?
+    /// Path to the piecemaker output directory for this generation.
+    var outputDirectory: URL?
 
     /// Image dimensions for display.
     var imageWidth: Int { Int(sourceImage.size.width) }
@@ -30,6 +34,13 @@ class PuzzleProject: ObservableObject, Identifiable {
     }
 
     var hasGeneratedPieces: Bool { !pieces.isEmpty }
+
+    /// Removes the piecemaker output directory from disk.
+    func cleanupOutputDirectory() {
+        guard let dir = outputDirectory else { return }
+        try? FileManager.default.removeItem(at: dir)
+        outputDirectory = nil
+    }
 }
 
 extension PuzzleProject: Equatable {
