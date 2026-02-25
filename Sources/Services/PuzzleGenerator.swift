@@ -1,38 +1,6 @@
 import AppKit
 import Foundation
-
-/// Metadata returned by the piecemaker Python script.
-struct PiecemakerMetadata: Codable {
-    let piece_count: Int
-    let image_width: Int
-    let image_height: Int
-    let requested_pieces: Int
-    let pieces: [PiecemakerPiece]
-    let error: String?
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.piece_count = try container.decodeIfPresent(Int.self, forKey: .piece_count) ?? 0
-        self.image_width = try container.decodeIfPresent(Int.self, forKey: .image_width) ?? 0
-        self.image_height = try container.decodeIfPresent(Int.self, forKey: .image_height) ?? 0
-        self.requested_pieces = try container.decodeIfPresent(Int.self, forKey: .requested_pieces) ?? 0
-        self.pieces = try container.decodeIfPresent([PiecemakerPiece].self, forKey: .pieces) ?? []
-        self.error = try container.decodeIfPresent(String.self, forKey: .error)
-    }
-}
-
-struct PiecemakerPiece: Codable {
-    let id: Int
-    let filename: String
-    let x1: Int
-    let y1: Int
-    let x2: Int
-    let y2: Int
-    let width: Int
-    let height: Int
-    let type: String
-    let neighbours: [Int]
-}
+import ImageIO
 
 /// Result of puzzle generation.
 struct GenerationResult: Sendable {
@@ -44,35 +12,28 @@ struct GenerationResult: Sendable {
 
 /// Errors that can occur during puzzle generation.
 enum GenerationError: Error, LocalizedError {
-    case imageEncodingFailed
-    case scriptNotFound
-    case processLaunchFailed(String)
-    case piecemakerFailed(stderr: String, exitCode: Int32)
-    case jsonParseFailed(String)
+    case imageLoadFailed
     case noPiecesGenerated
+    case outputDirectoryFailed(String)
+    case pieceExportFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .imageEncodingFailed:
-            return "Failed to encode the source image as PNG."
-        case .scriptNotFound:
-            return "Could not find generate_puzzle.py. Make sure the script exists in the Scripts/ directory."
-        case .processLaunchFailed(let reason):
-            return "Failed to launch the Python process: \(reason)"
-        case .piecemakerFailed(let stderr, let exitCode):
-            let detail = stderr.isEmpty ? "No error output captured." : stderr
-            return "piecemaker failed (exit code \(exitCode)):\n\(detail)"
-        case .jsonParseFailed(let detail):
-            return "Failed to parse piecemaker output: \(detail)"
+        case .imageLoadFailed:
+            return "Failed to load the source image for processing."
         case .noPiecesGenerated:
-            return "piecemaker returned no pieces. The image may be too small for the requested grid size."
+            return "No pieces were generated. The image may be too small for the requested grid size."
+        case .outputDirectoryFailed(let reason):
+            return "Failed to create output directory: \(reason)"
+        case .pieceExportFailed(let reason):
+            return "Failed to export a puzzle piece: \(reason)"
         }
     }
 }
 
-/// Generates jigsaw puzzle pieces using the piecemaker Python library.
-/// This delegates the hard geometry work (bezier curves, image clipping)
-/// to a battle-tested library that produces realistic jigsaw shapes.
+/// Generates jigsaw puzzle pieces using native Swift bezier curve geometry.
+/// Builds CGPath outlines for each piece, clips the source image, and writes
+/// transparent PNGs to disk for lazy loading.
 actor PuzzleGenerator {
 
     func generate(
@@ -84,177 +45,184 @@ actor PuzzleGenerator {
         var config = configuration
         config.validate()
 
-        let numPieces = config.rows * config.columns
+        let rows = config.rows
+        let cols = config.columns
 
-        // Save the image to a temporary file if we don't have a URL
-        let tempImageURL: URL
-        let needsCleanup: Bool
+        onProgress(0.02)
 
-        if let existingURL = imageURL, FileManager.default.fileExists(atPath: existingURL.path) {
-            tempImageURL = existingURL
-            needsCleanup = false
+        // Get CGImage from the source, preferring the file on disk for best quality
+        let sourceImage: CGImage
+        if let url = imageURL,
+           let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let loaded = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) {
+            sourceImage = loaded
+        } else if let cgImage = cgImageFromNSImage(image) {
+            sourceImage = cgImage
         } else {
-            // Write image to temp file
-            let tempDir = FileManager.default.temporaryDirectory
-            tempImageURL = tempDir.appendingPathComponent("puzzle_input_\(UUID().uuidString).png")
-            guard let tiffData = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiffData),
-                  let pngData = bitmap.representation(using: .png, properties: [:]) else {
-                return .failure(.imageEncodingFailed)
-            }
-            do {
-                try pngData.write(to: tempImageURL)
-            } catch {
-                return .failure(.imageEncodingFailed)
-            }
-            needsCleanup = true
+            return .failure(.imageLoadFailed)
         }
 
-        defer {
-            if needsCleanup {
-                try? FileManager.default.removeItem(at: tempImageURL)
-            }
-        }
+        onProgress(0.05)
 
-        // Output directory
+        // Upscale small images for smooth bezier edges
+        let workingImage = ImageScaler.upscaleIfNeeded(sourceImage)
+        let imageWidth = workingImage.width
+        let imageHeight = workingImage.height
+
+        // Compute cell dimensions
+        let cellWidth = CGFloat(imageWidth) / CGFloat(cols)
+        let cellHeight = CGFloat(imageHeight) / CGFloat(rows)
+
+        onProgress(0.08)
+
+        // Generate all grid edges with random tab directions
+        let gridEdges = GridEdges.generate(
+            rows: rows,
+            cols: cols,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight
+        )
+
+        onProgress(0.10)
+
+        // Create output directory
         let outputDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("jigsaw_output_\(UUID().uuidString)")
-
-        onProgress(0.1)
-
-        // Find the Python script (bundled with the app)
-        guard let scriptPath = findScript() else {
-            return .failure(.scriptNotFound)
-        }
-
-        // Run the Python script
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [
-            "python3", scriptPath,
-            tempImageURL.path, outputDir.path, String(numPieces)
-        ]
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        let piecesDir = outputDir.appendingPathComponent("pieces")
 
         do {
-            try process.run()
+            try FileManager.default.createDirectory(
+                at: piecesDir,
+                withIntermediateDirectories: true
+            )
         } catch {
-            return .failure(.processLaunchFailed(error.localizedDescription))
+            return .failure(.outputDirectoryFailed(error.localizedDescription))
         }
 
-        onProgress(0.3)
+        // Generate each piece: build path, clip image, save PNG
+        let totalPieces = rows * cols
+        var pieces: [PuzzlePiece] = []
+        pieces.reserveCapacity(totalPieces)
 
-        // Wait for completion using a continuation instead of blocking
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            process.terminationHandler = { _ in
-                continuation.resume()
+        for row in 0..<rows {
+            for col in 0..<cols {
+                let pieceIndex = row * cols + col
+
+                // Build the closed CGPath for this piece
+                let piecePath = PiecePathBuilder.buildPiecePath(
+                    row: row,
+                    col: col,
+                    rows: rows,
+                    cols: cols,
+                    cellWidth: cellWidth,
+                    cellHeight: cellHeight,
+                    gridEdges: gridEdges
+                )
+
+                // Clip the source image and save as transparent PNG
+                let filename = "piece_\(pieceIndex).png"
+                let outputURL = piecesDir.appendingPathComponent(filename)
+
+                let clipResult: PieceClipper.ClipResult
+                do {
+                    clipResult = try PieceClipper.clipAndSave(
+                        sourceImage: workingImage,
+                        piecePath: piecePath,
+                        outputURL: outputURL,
+                        imageWidth: imageWidth,
+                        imageHeight: imageHeight
+                    )
+                } catch {
+                    return .failure(.pieceExportFailed(
+                        "Piece \(pieceIndex): \(error.localizedDescription)"
+                    ))
+                }
+
+                // Compute piece type from grid position
+                let isTop = (row == 0)
+                let isBottom = (row == rows - 1)
+                let isLeft = (col == 0)
+                let isRight = (col == cols - 1)
+                let borderCount = [isTop, isBottom, isLeft, isRight].filter { $0 }.count
+
+                let pieceType: PieceType
+                if borderCount >= 2 {
+                    pieceType = .corner
+                } else if borderCount == 1 {
+                    pieceType = .edge
+                } else {
+                    pieceType = .interior
+                }
+
+                // Compute neighbours (trivial on a grid)
+                var neighbourIDs: [Int] = []
+                if row > 0 { neighbourIDs.append((row - 1) * cols + col) }
+                if row < rows - 1 { neighbourIDs.append((row + 1) * cols + col) }
+                if col > 0 { neighbourIDs.append(row * cols + (col - 1)) }
+                if col < cols - 1 { neighbourIDs.append(row * cols + (col + 1)) }
+
+                let piece = PuzzlePiece(
+                    id: UUID(),
+                    pieceIndex: pieceIndex,
+                    row: clipResult.y1,
+                    col: clipResult.x1,
+                    x1: clipResult.x1,
+                    y1: clipResult.y1,
+                    x2: clipResult.x2,
+                    y2: clipResult.y2,
+                    pieceWidth: clipResult.width,
+                    pieceHeight: clipResult.height,
+                    pieceType: pieceType,
+                    neighbourIDs: neighbourIDs,
+                    imagePath: outputURL
+                )
+                pieces.append(piece)
+
+                // Report progress (0.10 to 0.90 range)
+                let progress = 0.10 + 0.80 * Double(pieceIndex + 1) / Double(totalPieces)
+                onProgress(progress)
             }
         }
 
-        onProgress(0.7)
-
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrString = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        guard process.terminationStatus == 0 else {
-            return .failure(.piecemakerFailed(stderr: stderrString, exitCode: process.terminationStatus))
-        }
-
-        // Read stdout JSON
-        let outputData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-
-        let metadata: PiecemakerMetadata
-        do {
-            metadata = try JSONDecoder().decode(PiecemakerMetadata.self, from: outputData)
-        } catch {
-            let rawOutput = String(data: outputData, encoding: .utf8) ?? "<binary data>"
-            return .failure(.jsonParseFailed("\(error.localizedDescription)\nRaw output: \(rawOutput.prefix(500))"))
-        }
-
-        if let errorMessage = metadata.error {
-            return .failure(.piecemakerFailed(stderr: errorMessage, exitCode: 0))
-        }
-
-        onProgress(0.8)
-
-        // Build PuzzlePiece models with file paths (lazy image loading)
-        let piecesDir = outputDir.appendingPathComponent("pieces")
-        var pieces: [PuzzlePiece] = []
-
-        guard !metadata.pieces.isEmpty else {
+        guard !pieces.isEmpty else {
             return .failure(.noPiecesGenerated)
         }
 
-        for (index, pMeta) in metadata.pieces.enumerated() {
-            let imagePath = piecesDir.appendingPathComponent(pMeta.filename)
+        // Render the lines overlay
+        let linesImage = LinesRenderer.render(
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            gridEdges: gridEdges,
+            rows: rows,
+            cols: cols,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight
+        )
 
-            let pieceType: PieceType
-            switch pMeta.type {
-            case "corner": pieceType = .corner
-            case "edge": pieceType = .edge
-            default: pieceType = .interior
-            }
-
-            let piece = PuzzlePiece(
-                id: UUID(),
-                pieceIndex: pMeta.id,
-                row: pMeta.y1,
-                col: pMeta.x1,
-                x1: pMeta.x1, y1: pMeta.y1,
-                x2: pMeta.x2, y2: pMeta.y2,
-                pieceWidth: pMeta.width,
-                pieceHeight: pMeta.height,
-                pieceType: pieceType,
-                neighbourIDs: pMeta.neighbours,
-                imagePath: imagePath
-            )
-            pieces.append(piece)
-
-            let progress = 0.8 + 0.2 * Double(index + 1) / Double(metadata.pieces.count)
-            onProgress(progress)
-        }
-
-        // Load the lines overlay image
-        let linesPath = outputDir.appendingPathComponent("lines.png")
-        let linesImage = NSImage(contentsOf: linesPath)
+        onProgress(0.95)
 
         return .success(GenerationResult(
             pieces: pieces,
             linesImage: linesImage,
             outputDirectory: outputDir,
-            actualPieceCount: metadata.piece_count
+            actualPieceCount: pieces.count
         ))
     }
 
-    /// Find the generate_puzzle.py script relative to the executable.
-    private func findScript() -> String? {
-        // When running via `swift run`, the executable is in .build/
-        // The script is in Scripts/ relative to the project root
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let executablePath = arguments.first else { return nil }
-        let executableURL = URL(fileURLWithPath: executablePath)
+    // MARK: - Private Helpers
 
-        // Try relative to executable (for swift run from project root)
-        let projectRoot = executableURL
-            .deletingLastPathComponent()  // debug/
-            .deletingLastPathComponent()  // arm64-.../
-            .deletingLastPathComponent()  // .build/
-
-        let scriptPath = projectRoot.appendingPathComponent("Scripts/generate_puzzle.py").path
-        if FileManager.default.fileExists(atPath: scriptPath) {
-            return scriptPath
+    /// Extract a CGImage from an NSImage, using the best available representation.
+    private func cgImageFromNSImage(_ nsImage: NSImage) -> CGImage? {
+        // Try to get the CGImage directly from representations
+        if let rep = nsImage.representations.first as? NSBitmapImageRep {
+            return rep.cgImage
         }
 
-        // Try current working directory
-        let cwdPath = FileManager.default.currentDirectoryPath + "/Scripts/generate_puzzle.py"
-        if FileManager.default.fileExists(atPath: cwdPath) {
-            return cwdPath
+        // Fall back to rendering via TIFF
+        guard let tiffData = nsImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return nil
         }
-
-        return nil
+        return bitmap.cgImage
     }
 }

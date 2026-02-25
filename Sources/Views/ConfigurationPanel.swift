@@ -64,7 +64,7 @@ struct ConfigurationPanel: View {
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         } else {
-                            Text("~\(project.configuration.totalPieces) pieces (approximate)")
+                            Text("\(project.configuration.totalPieces) pieces")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
