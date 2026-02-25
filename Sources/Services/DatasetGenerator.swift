@@ -28,7 +28,12 @@ enum DatasetError: Error, LocalizedError {
     }
 }
 
-/// Generates structured ML training datasets from 2-piece jigsaw puzzles.
+/// An adjacent pair position in the grid (two neighbouring cells).
+struct AdjacentPosition {
+    let r1: Int, c1: Int, r2: Int, c2: Int
+}
+
+/// Generates structured ML training datasets from jigsaw puzzles.
 enum DatasetGenerator {
 
     // MARK: - Main Entry Point
@@ -81,16 +86,19 @@ enum DatasetGenerator {
         let imageIDs = project.images.map(\.id)
         let cutIndices = Array(0..<config.cutsPerImage)
 
-        // Build puzzle config for 1x2 normalised grid
+        // Build puzzle config for the configured grid
         var puzzleConfig = PuzzleConfiguration()
-        puzzleConfig.rows = 1
-        puzzleConfig.columns = 2
+        puzzleConfig.rows = config.rows
+        puzzleConfig.columns = config.columns
         puzzleConfig.pieceSize = config.pieceSize
         puzzleConfig.pieceFill = config.pieceFill
         puzzleConfig.validate()
 
         let cellWidth = CGFloat(config.pieceSize)
         let cellHeight = CGFloat(config.pieceSize)
+
+        // Precompute all adjacent pair positions in the grid
+        let adjacentPositions = buildAdjacentPositions(rows: config.rows, cols: config.columns)
 
         // Temp directory for all generated pieces
         let tempDir = FileManager.default.temporaryDirectory
@@ -106,7 +114,7 @@ enum DatasetGenerator {
         // MARK: Phase 1 - Piece Generation (0% - 70%)
 
         state.status = .generating(phase: "Generating pieces...", progress: 0.0)
-        state.log("Phase 1: Generating pieces (\(imageCount) images x \(config.cutsPerImage) cuts)")
+        state.log("Phase 1: Generating pieces (\(imageCount) images x \(config.cutsPerImage) cuts, \(config.rows)x\(config.columns) grid, \(adjacentPositions.count) pair positions)")
 
         // Lookup: [imageID][cutIndex] -> [DatasetPiece]
         var pieceLookup: [UUID: [Int: [DatasetPiece]]] = [:]
@@ -121,7 +129,7 @@ enum DatasetGenerator {
         var sharedEdges: [Int: GridEdges] = [:]
         for cutIndex in cutIndices {
             sharedEdges[cutIndex] = GridEdges.generate(
-                rows: 1, cols: 2,
+                rows: config.rows, cols: config.columns,
                 cellWidth: cellWidth, cellHeight: cellHeight
             )
         }
@@ -155,6 +163,7 @@ enum DatasetGenerator {
                 switch result {
                 case .success(let genResult):
                     var pieces: [DatasetPiece] = []
+                    let cols = config.columns
                     for piece in genResult.pieces {
                         guard let sourcePath = piece.imagePath else { continue }
                         let destPath = pieceDir.appendingPathComponent("piece_\(piece.pieceIndex).png")
@@ -170,6 +179,8 @@ enum DatasetGenerator {
                             imageID: imageID,
                             cutIndex: cutIndex,
                             pieceIndex: piece.pieceIndex,
+                            gridRow: piece.pieceIndex / cols,
+                            gridCol: piece.pieceIndex % cols,
                             pngPath: destPath
                         ))
                     }
@@ -196,7 +207,8 @@ enum DatasetGenerator {
             }
         }
 
-        state.log("Phase 1 complete: generated \(generationIndex * 2) pieces")
+        let piecesPerGeneration = config.rows * config.columns
+        state.log("Phase 1 complete: generated \(generationIndex * piecesPerGeneration) pieces")
 
         // MARK: Phase 2 - Build Index (70% - 75%)
 
@@ -282,6 +294,7 @@ enum DatasetGenerator {
                     allImageIDs: imageIDs,
                     cutIndices: cutIndices,
                     pieceLookup: pieceLookup,
+                    adjacentPositions: adjacentPositions,
                     startPairID: globalPairID
                 )
 
@@ -368,6 +381,31 @@ enum DatasetGenerator {
         state.status = .completed(pairCount: totalWritten)
     }
 
+    // MARK: - Adjacent Position Helpers
+
+    /// Build all adjacent pair positions (horizontal + vertical) in a grid.
+    private static func buildAdjacentPositions(rows: Int, cols: Int) -> [AdjacentPosition] {
+        var positions: [AdjacentPosition] = []
+        // Horizontal neighbours
+        for r in 0..<rows {
+            for c in 0..<(cols - 1) {
+                positions.append(AdjacentPosition(r1: r, c1: c, r2: r, c2: c + 1))
+            }
+        }
+        // Vertical neighbours
+        for r in 0..<(rows - 1) {
+            for c in 0..<cols {
+                positions.append(AdjacentPosition(r1: r, c1: c, r2: r + 1, c2: c))
+            }
+        }
+        return positions
+    }
+
+    /// Find a piece at a given grid coordinate within a pieces array.
+    private static func piece(atRow row: Int, col: Int, in pieces: [DatasetPiece]) -> DatasetPiece? {
+        pieces.first { $0.gridRow == row && $0.gridCol == col }
+    }
+
     // MARK: - Pair Sampling
 
     private static func samplePairs(
@@ -377,6 +415,7 @@ enum DatasetGenerator {
         allImageIDs: [UUID],
         cutIndices: [Int],
         pieceLookup: [UUID: [Int: [DatasetPiece]]],
+        adjacentPositions: [AdjacentPosition],
         startPairID: Int
     ) -> [DatasetPair] {
         var pairs: [DatasetPair] = []
@@ -391,14 +430,16 @@ enum DatasetGenerator {
                 allImageIDs: allImageIDs,
                 cutIndices: cutIndices,
                 pieceLookup: pieceLookup,
+                adjacentPositions: adjacentPositions,
                 pairID: startPairID + pairs.count
             ) else {
                 _ = attempt
                 continue
             }
 
-            // Deduplicate by image/cut combo
-            let key = "\(pair.left.imageID)-\(pair.left.cutIndex)-\(pair.right.imageID)-\(pair.right.cutIndex)"
+            // Deduplicate by image/cut/position combo
+            let key = "\(pair.left.imageID)-\(pair.left.cutIndex)-\(pair.left.gridRow),\(pair.left.gridCol)"
+                + "-\(pair.right.imageID)-\(pair.right.cutIndex)-\(pair.right.gridRow),\(pair.right.gridCol)"
             if seen.contains(key) { continue }
             seen.insert(key)
 
@@ -414,50 +455,49 @@ enum DatasetGenerator {
         allImageIDs: [UUID],
         cutIndices: [Int],
         pieceLookup: [UUID: [Int: [DatasetPiece]]],
+        adjacentPositions: [AdjacentPosition],
         pairID: Int
     ) -> DatasetPair? {
+        guard let pos = adjacentPositions.randomElement() else { return nil }
+
         switch category {
         case .correct:
-            // Random image + random cut -> piece 0 and piece 1 from same image/cut
+            // Same image, same cut, adjacent pair at random position
             guard let imageID = imageIDs.randomElement(),
                   let cutIndex = cutIndices.randomElement(),
                   let pieces = pieceLookup[imageID]?[cutIndex],
-                  pieces.count >= 2 else { return nil }
-            let left = pieces.first { $0.pieceIndex == 0 }
-            let right = pieces.first { $0.pieceIndex == 1 }
-            guard let l = left, let r = right else { return nil }
-            return DatasetPair(left: l, right: r, category: .correct, pairID: pairID)
+                  let left = piece(atRow: pos.r1, col: pos.c1, in: pieces),
+                  let right = piece(atRow: pos.r2, col: pos.c2, in: pieces) else { return nil }
+            return DatasetPair(left: left, right: right, category: .correct, pairID: pairID)
 
         case .wrongShapeMatch:
-            // Same cut (same edges) + 2 different images
+            // Same cut (shared GridEdges), same pair position, different images
             guard imageIDs.count >= 2,
                   let cutIndex = cutIndices.randomElement() else { return nil }
             let shuffled = imageIDs.shuffled()
             let imageA = shuffled[0]
             let imageB = shuffled[1]
             guard let piecesA = pieceLookup[imageA]?[cutIndex],
-                  let piecesB = pieceLookup[imageB]?[cutIndex] else { return nil }
-            let left = piecesA.first { $0.pieceIndex == 0 }
-            let right = piecesB.first { $0.pieceIndex == 1 }
-            guard let l = left, let r = right else { return nil }
-            return DatasetPair(left: l, right: r, category: .wrongShapeMatch, pairID: pairID)
+                  let piecesB = pieceLookup[imageB]?[cutIndex],
+                  let left = piece(atRow: pos.r1, col: pos.c1, in: piecesA),
+                  let right = piece(atRow: pos.r2, col: pos.c2, in: piecesB) else { return nil }
+            return DatasetPair(left: left, right: right, category: .wrongShapeMatch, pairID: pairID)
 
         case .wrongImageMatch:
-            // Same image + 2 different cuts
+            // Same image, same pair position, different cuts
             guard cutIndices.count >= 2,
                   let imageID = imageIDs.randomElement() else { return nil }
             let shuffledCuts = cutIndices.shuffled()
             let cutA = shuffledCuts[0]
             let cutB = shuffledCuts[1]
             guard let piecesA = pieceLookup[imageID]?[cutA],
-                  let piecesB = pieceLookup[imageID]?[cutB] else { return nil }
-            let left = piecesA.first { $0.pieceIndex == 0 }
-            let right = piecesB.first { $0.pieceIndex == 1 }
-            guard let l = left, let r = right else { return nil }
-            return DatasetPair(left: l, right: r, category: .wrongImageMatch, pairID: pairID)
+                  let piecesB = pieceLookup[imageID]?[cutB],
+                  let left = piece(atRow: pos.r1, col: pos.c1, in: piecesA),
+                  let right = piece(atRow: pos.r2, col: pos.c2, in: piecesB) else { return nil }
+            return DatasetPair(left: left, right: right, category: .wrongImageMatch, pairID: pairID)
 
         case .wrongNothing:
-            // 2 different images + 2 different cuts
+            // Different images, different cuts, random pair position
             guard imageIDs.count >= 2, cutIndices.count >= 2 else { return nil }
             let shuffledImages = imageIDs.shuffled()
             let shuffledCuts = cutIndices.shuffled()
@@ -466,11 +506,10 @@ enum DatasetGenerator {
             let cutA = shuffledCuts[0]
             let cutB = shuffledCuts[1]
             guard let piecesA = pieceLookup[imageA]?[cutA],
-                  let piecesB = pieceLookup[imageB]?[cutB] else { return nil }
-            let left = piecesA.first { $0.pieceIndex == 0 }
-            let right = piecesB.first { $0.pieceIndex == 1 }
-            guard let l = left, let r = right else { return nil }
-            return DatasetPair(left: l, right: r, category: .wrongNothing, pairID: pairID)
+                  let piecesB = pieceLookup[imageB]?[cutB],
+                  let left = piece(atRow: pos.r1, col: pos.c1, in: piecesA),
+                  let right = piece(atRow: pos.r2, col: pos.c2, in: piecesB) else { return nil }
+            return DatasetPair(left: left, right: right, category: .wrongNothing, pairID: pairID)
         }
     }
 
@@ -517,7 +556,7 @@ enum DatasetGenerator {
             "piece_size": config.pieceSize,
             "canvas_size": canvasSize,
             "piece_fill": config.pieceFill.rawValue,
-            "grid": "1x2",
+            "grid": "\(config.rows)x\(config.columns)",
             "split_ratios": [
                 "train": config.trainRatio,
                 "test": config.testRatio,

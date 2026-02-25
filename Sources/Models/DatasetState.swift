@@ -40,6 +40,8 @@ struct DatasetPiece {
     let imageID: UUID
     let cutIndex: Int
     let pieceIndex: Int
+    let gridRow: Int
+    let gridCol: Int
     let pngPath: URL
 }
 
@@ -54,6 +56,8 @@ struct DatasetPair {
 /// Configuration for dataset generation.
 struct DatasetConfiguration {
     var projectID: UUID?
+    var rows: Int = 1
+    var columns: Int = 2
     var pieceSize: Int = 224
     var pieceFill: PieceFill = .black
     var cutsPerImage: Int = 10
@@ -140,20 +144,27 @@ class DatasetState: ObservableObject {
 
     // MARK: - Capacity Calculations
 
+    /// Number of adjacent pair positions in the configured grid.
+    /// Horizontal: rows * (cols - 1), vertical: (rows - 1) * cols.
+    var pairPositions: Int {
+        configuration.rows * (configuration.columns - 1)
+        + (configuration.rows - 1) * configuration.columns
+    }
+
     func correctPool(imageCount: Int) -> Int {
-        imageCount * configuration.cutsPerImage
+        imageCount * configuration.cutsPerImage * pairPositions
     }
 
     func shapeMatchPool(imageCount: Int) -> Int {
-        configuration.cutsPerImage * imageCount * (imageCount - 1)
+        configuration.cutsPerImage * imageCount * (imageCount - 1) * pairPositions
     }
 
     func imageMatchPool(imageCount: Int) -> Int {
-        imageCount * configuration.cutsPerImage * (configuration.cutsPerImage - 1)
+        imageCount * configuration.cutsPerImage * (configuration.cutsPerImage - 1) * pairPositions
     }
 
     func nothingPool(imageCount: Int) -> Int {
-        imageCount * (imageCount - 1) * configuration.cutsPerImage * (configuration.cutsPerImage - 1)
+        imageCount * (imageCount - 1) * configuration.cutsPerImage * (configuration.cutsPerImage - 1) * pairPositions
     }
 
     // MARK: - Dataset Persistence

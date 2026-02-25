@@ -15,7 +15,7 @@ struct DatasetGenerationPanel: View {
                     Text("Dataset Generation")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    Text("Generate structured ML training datasets from 2-piece jigsaw puzzles")
+                    Text("Generate structured ML training datasets from jigsaw puzzle piece pairs")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -101,11 +101,14 @@ struct DatasetGenerationPanel: View {
         GroupBox("Capacity") {
             VStack(alignment: .leading, spacing: 8) {
                 let cuts = datasetState.configuration.cutsPerImage
+                let pairPos = datasetState.pairPositions
 
                 HStack {
                     Label("\(imageCount) images", systemImage: "photo.stack")
                     Spacer()
-                    Label("\(cuts) cuts per image", systemImage: "scissors")
+                    Label("\(cuts) cuts", systemImage: "scissors")
+                    Spacer()
+                    Label("\(pairPos) positions", systemImage: "square.grid.2x2")
                 }
                 .font(.callout)
 
@@ -212,15 +215,52 @@ struct DatasetGenerationPanel: View {
 
     private var generationSettingsSection: some View {
         GroupBox("Generation") {
-            HStack(spacing: 8) {
-                Text("Cuts per image:")
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Grid rows:")
+                        .font(.callout)
+                    Stepper(
+                        "\(datasetState.configuration.rows)",
+                        value: $datasetState.configuration.rows,
+                        in: 1...100
+                    )
                     .font(.callout)
-                Stepper(
-                    "\(datasetState.configuration.cutsPerImage)",
-                    value: $datasetState.configuration.cutsPerImage,
-                    in: 2...50
-                )
-                .font(.callout)
+                }
+                HStack(spacing: 8) {
+                    Text("Grid columns:")
+                        .font(.callout)
+                    Stepper(
+                        "\(datasetState.configuration.columns)",
+                        value: $datasetState.configuration.columns,
+                        in: 1...100
+                    )
+                    .font(.callout)
+                }
+
+                let pairPos = datasetState.pairPositions
+                let totalPieces = datasetState.configuration.rows * datasetState.configuration.columns
+                Text("\(datasetState.configuration.rows)x\(datasetState.configuration.columns) grid = \(totalPieces) pieces, \(pairPos) adjacent pair positions")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if pairPos == 0 {
+                    Label("Grid must have at least 2 cells (e.g. 1x2)", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    Text("Cuts per image:")
+                        .font(.callout)
+                    Stepper(
+                        "\(datasetState.configuration.cutsPerImage)",
+                        value: $datasetState.configuration.cutsPerImage,
+                        in: 2...50
+                    )
+                    .font(.callout)
+                }
             }
             .padding(8)
         }
@@ -367,6 +407,7 @@ struct DatasetGenerationPanel: View {
         guard abs(sum - 1.0) < 0.01 else { return false }
 
         if imageCount < 1 { return false }
+        if datasetState.pairPositions < 1 { return false }
 
         return true
     }
@@ -512,6 +553,7 @@ struct DatasetDetailView: View {
                 // Stats bar
                 HStack(spacing: 24) {
                     statBadge(value: "\(dataset.totalPairs)", label: "Total pairs", icon: "square.grid.2x2", colour: .purple)
+                    statBadge(value: "\(dataset.configuration.rows)x\(dataset.configuration.columns)", label: "Grid", icon: "grid", colour: .indigo)
                     let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
                     statBadge(value: "\(canvasSize)px", label: "Canvas", icon: "square.resize", colour: .blue)
                     statBadge(value: "\(dataset.configuration.cutsPerImage)", label: "Cuts/image", icon: "scissors", colour: .orange)
@@ -537,7 +579,7 @@ struct DatasetDetailView: View {
                 GroupBox("Generation Config") {
                     VStack(spacing: 6) {
                         configRow("Piece size", value: "\(dataset.configuration.pieceSize) px")
-                        configRow("Grid", value: "1 x 2")
+                        configRow("Grid", value: "\(dataset.configuration.rows) x \(dataset.configuration.columns)")
                         Divider()
                         configRow("Correct (requested)", value: "\(dataset.configuration.correctCount)")
                         configRow("Shape match (requested)", value: "\(dataset.configuration.wrongShapeMatchCount)")
