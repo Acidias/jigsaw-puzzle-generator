@@ -173,6 +173,7 @@ struct BatchItemRow: View {
 
 struct BatchSettingsPanel: View {
     @Binding var configuration: BatchConfiguration
+    @State private var minimumDimensionText = ""
 
     var body: some View {
         GroupBox("Batch Settings") {
@@ -231,11 +232,7 @@ struct BatchSettingsPanel: View {
                     HStack(spacing: 8) {
                         Text("Min. dimension:")
                             .font(.callout)
-                        TextField(
-                            "0",
-                            value: $configuration.minimumImageDimension,
-                            format: .number
-                        )
+                        TextField("0", text: minimumDimensionBinding)
                         .frame(width: 60)
                         .textFieldStyle(.roundedBorder)
                         Text("px")
@@ -265,6 +262,28 @@ struct BatchSettingsPanel: View {
             }
             .padding(8)
         }
+        .onAppear {
+            minimumDimensionText = configuration.minimumImageDimension == 0
+                ? ""
+                : String(configuration.minimumImageDimension)
+        }
+        .onChange(of: configuration.minimumImageDimension) { _, newValue in
+            let expected = newValue == 0 ? "" : String(newValue)
+            if minimumDimensionText != expected {
+                minimumDimensionText = expected
+            }
+        }
+    }
+
+    private var minimumDimensionBinding: Binding<String> {
+        Binding(
+            get: { minimumDimensionText },
+            set: { newValue in
+                let digitsOnly = newValue.filter(\.isNumber)
+                minimumDimensionText = digitsOnly
+                configuration.minimumImageDimension = Int(digitsOnly) ?? 0
+            }
+        )
     }
 
     private func chooseExportDirectory() {
