@@ -71,6 +71,7 @@ struct OpenverseSearchParams {
     var page: Int = 1
     var size: OpenverseSize? = nil
     var category: OpenverseCategory? = nil
+    var licenseType: OpenverseLicenceType? = nil
 
     enum OpenverseSize: String, CaseIterable, Identifiable {
         case small, medium, large
@@ -88,6 +89,20 @@ struct OpenverseSearchParams {
             case .photograph: return "Photograph"
             case .illustration: return "Illustration"
             case .digitizedArtwork: return "Digitised Artwork"
+            }
+        }
+    }
+
+    enum OpenverseLicenceType: String, CaseIterable, Identifiable {
+        case commercial
+        case modification
+        case allCC = "all-cc"
+        var id: String { rawValue }
+        var displayName: String {
+            switch self {
+            case .commercial: return "Commercial use"
+            case .modification: return "Allows modification"
+            case .allCC: return "All Creative Commons"
             }
         }
     }
@@ -138,6 +153,9 @@ enum OpenverseAPI {
         }
         if let category = params.category {
             queryItems.append(URLQueryItem(name: "category", value: category.rawValue))
+        }
+        if let licenseType = params.licenseType {
+            queryItems.append(URLQueryItem(name: "license_type", value: licenseType.rawValue))
         }
         components.queryItems = queryItems
 

@@ -174,6 +174,14 @@ struct OpenversePanel: View {
                 }
                 .frame(width: 200)
 
+                Picker("Licence:", selection: $state.params.licenseType) {
+                    Text("Any").tag(OpenverseSearchParams.OpenverseLicenceType?.none)
+                    ForEach(OpenverseSearchParams.OpenverseLicenceType.allCases) { type in
+                        Text(type.displayName).tag(Optional(type))
+                    }
+                }
+                .frame(width: 200)
+
                 Picker("Max results:", selection: $state.params.pageSize) {
                     Text("20").tag(20)
                     Text("40").tag(40)
