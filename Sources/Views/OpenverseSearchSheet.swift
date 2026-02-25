@@ -128,6 +128,7 @@ struct OpenverseSearchSheet: View {
     @ObservedObject var batchState: BatchState
     @StateObject private var state = OpenverseSearchState()
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var searchFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -135,6 +136,7 @@ struct OpenverseSearchSheet: View {
             HStack {
                 TextField("Search Openverse...", text: $state.params.query)
                     .textFieldStyle(.roundedBorder)
+                    .focused($searchFieldFocused)
                     .onSubmit { state.search() }
 
                 Button("Search") {
@@ -291,6 +293,12 @@ struct OpenverseSearchSheet: View {
         }
         .frame(minWidth: 650, minHeight: 500)
         .frame(idealWidth: 750, idealHeight: 600)
+        .onAppear {
+            // Delay slightly so the sheet finishes presenting before grabbing focus
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                searchFieldFocused = true
+            }
+        }
     }
 }
 
