@@ -97,19 +97,7 @@ private struct ProjectRow: View {
                     .italic()
             } else {
                 ForEach(project.cuts) { cut in
-                    CutRow(cut: cut)
-                        .contextMenu {
-                            Button("Remove") {
-                                ProjectStore.deleteCut(projectID: project.id, cutID: cut.id)
-                                project.cuts.removeAll { $0.id == cut.id }
-                                appState.saveProject(project)
-                                if appState.selectedCutID == cut.id {
-                                    appState.selectedCutID = nil
-                                    appState.selectedCutImageID = nil
-                                    appState.selectedPieceID = nil
-                                }
-                            }
-                        }
+                    CutRow(cut: cut, project: project)
                 }
             }
         } label: {
@@ -163,7 +151,9 @@ private struct ProjectRow: View {
 
 /// Cut row showing image results underneath.
 private struct CutRow: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject var cut: PuzzleCut
+    @ObservedObject var project: PuzzleProject
 
     var body: some View {
         DisclosureGroup {
@@ -189,6 +179,18 @@ private struct CutRow: View {
                 }
             }
             .tag(SidebarItem.cut(cut.id))
+            .contextMenu {
+                Button("Remove") {
+                    ProjectStore.deleteCut(projectID: project.id, cutID: cut.id)
+                    project.cuts.removeAll { $0.id == cut.id }
+                    appState.saveProject(project)
+                    if appState.selectedCutID == cut.id {
+                        appState.selectedCutID = nil
+                        appState.selectedCutImageID = nil
+                        appState.selectedPieceID = nil
+                    }
+                }
+            }
         }
     }
 }
