@@ -3,6 +3,7 @@ import SwiftUI
 enum SidebarItem: Hashable {
     case batchLocal
     case batchOpenverse
+    case datasetGeneration
     case project(UUID)
     case cut(UUID)
     case cutImage(UUID)
@@ -22,6 +23,11 @@ struct SidebarView: View {
                     .tag(SidebarItem.batchOpenverse)
             }
 
+            Section("AI Tools") {
+                Label("Dataset Generation", systemImage: "brain")
+                    .tag(SidebarItem.datasetGeneration)
+            }
+
             Section("Projects") {
                 ForEach(appState.projects) { project in
                     ProjectRow(project: project)
@@ -37,7 +43,7 @@ struct SidebarView: View {
 
     private func handleSelection(_ item: SidebarItem?) {
         switch item {
-        case .batchLocal, .batchOpenverse:
+        case .batchLocal, .batchOpenverse, .datasetGeneration:
             appState.selectedProjectID = nil
             appState.selectedCutID = nil
             appState.selectedCutImageID = nil

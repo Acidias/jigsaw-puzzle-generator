@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var batchState = BatchState()
     @StateObject private var openverseState = OpenverseSearchState()
+    @StateObject private var datasetState = DatasetState()
     @State private var sidebarSelection: SidebarItem? = nil
     @State private var isDragTargeted = false
     @State private var errorMessage: String?
@@ -29,6 +30,8 @@ struct ContentView: View {
                         LocalImagesPanel(batchState: batchState)
                     case .batchOpenverse:
                         OpenversePanel(state: openverseState)
+                    case .datasetGeneration:
+                        DatasetGenerationPanel(datasetState: datasetState)
                     default:
                         projectDetailView
                     }

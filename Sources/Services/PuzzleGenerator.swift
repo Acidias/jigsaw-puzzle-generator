@@ -42,6 +42,7 @@ actor PuzzleGenerator {
         image: NSImage,
         imageURL: URL?,
         configuration: PuzzleConfiguration,
+        gridEdges existingEdges: GridEdges? = nil,
         onProgress: @escaping @Sendable (Double) -> Void
     ) async -> Result<GenerationResult, GenerationError> {
         var config = configuration
@@ -87,13 +88,18 @@ actor PuzzleGenerator {
 
         onProgress(0.08)
 
-        // Generate all grid edges with random tab directions
-        let gridEdges = GridEdges.generate(
-            rows: rows,
-            cols: cols,
-            cellWidth: cellWidth,
-            cellHeight: cellHeight
-        )
+        // Generate all grid edges with random tab directions (or reuse provided ones)
+        let gridEdges: GridEdges
+        if let existingEdges {
+            gridEdges = existingEdges
+        } else {
+            gridEdges = GridEdges.generate(
+                rows: rows,
+                cols: cols,
+                cellWidth: cellWidth,
+                cellHeight: cellHeight
+            )
+        }
 
         onProgress(0.10)
 

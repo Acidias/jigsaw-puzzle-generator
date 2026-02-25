@@ -19,11 +19,13 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
   - `PuzzlePiece` - Individual puzzle piece with bounding box and image path
   - `PuzzleConfiguration` - Grid size config (rows/columns)
   - `BatchState` - Batch processing queue and logic
+  - `DatasetState` - ML dataset generation state (config, status, categories, splits)
   - `ImageAttribution` - Openverse licence/creator info
   - `ProjectManifest` - Codable DTOs for JSON persistence (ProjectManifest, ImageManifest, CutManifest, CutImageResultManifest, PieceManifest)
-- `Sources/Views/` - SwiftUI views (four-level sidebar tree, project/cut/cutImage/piece detail, config panel, puzzle overlay, batch processing, Openverse search)
+- `Sources/Views/` - SwiftUI views (four-level sidebar tree, project/cut/cutImage/piece detail, config panel, puzzle overlay, batch processing, Openverse search, dataset generation)
 - `Sources/Services/`
-  - `PuzzleGenerator` - Orchestrates native puzzle generation, returns Result<GenerationResult, GenerationError>
+  - `PuzzleGenerator` - Orchestrates native puzzle generation, returns Result<GenerationResult, GenerationError>. Accepts optional `gridEdges:` to reuse shared edges across images.
+  - `DatasetGenerator` - Generates structured ML training datasets from 2-piece puzzles (4 categories, train/test/valid splits)
   - `ExportService` - Exports pieces as PNGs with metadata JSON (includes attribution when sourced from Openverse)
   - `OpenverseAPI` - Openverse image search API client (search, download, attribution)
   - `ProjectStore` - Persistence layer: saves/loads projects to ~/Library/Application Support/JigsawPuzzleGenerator/
@@ -49,3 +51,4 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 - Export copies PNG files from disk instead of re-encoding (falls back to NSImage for lines overlay)
 - Batch processing: select multiple local images, creates a single project-level cut with CutImageResult per batch item, per-item and overall progress, skip/fail handling, optional auto-export
 - Openverse integration: search Creative Commons images, filter by size/category/licence type/max results (20-500), download selected images directly into a project (existing or new) with licence/attribution preserved through to export metadata JSON
+- **Dataset generation**: generates ML training datasets from 2-piece (1x2) jigsaw puzzles. Four pair categories: correct (matching shape+image), wrong shape match (same edges, different image), wrong image match (same image, different edges), wrong nothing (different both). Image-level train/test/valid split prevents data leakage. Shared GridEdges enable shape-match pairs across images. Output: train/test/valid dirs with category subdirs, labels.csv per split, metadata.json.
