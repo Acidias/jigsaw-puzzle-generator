@@ -59,7 +59,7 @@ struct OpenverseImage: Codable, Identifiable {
 }
 
 struct OpenverseTag: Codable {
-    let name: String
+    let name: String?
 }
 
 // MARK: - Search Parameters

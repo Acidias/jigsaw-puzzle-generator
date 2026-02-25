@@ -15,7 +15,7 @@ class OpenverseSearchState: ObservableObject {
     @Published var totalResultCount = 0
     @Published var pageCount = 0
     @Published var downloadFailures: [String] = []
-    var thumbnailCache: [String: NSImage] = [:]
+    @Published var thumbnailCache: [String: NSImage] = [:]
 
     func search() {
         guard !params.query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -59,7 +59,7 @@ class OpenverseSearchState: ObservableObject {
         }
     }
 
-    func downloadSelected(into batchState: BatchState) {
+    func downloadSelected(into batchState: BatchState, onComplete: @escaping () -> Void) {
         let selected = results.filter { selectedImageIDs.contains($0.id) }
         guard !selected.isEmpty else { return }
 
@@ -88,6 +88,11 @@ class OpenverseSearchState: ObservableObject {
                 downloadCompleted += 1
             }
             isDownloading = false
+
+            // Auto-dismiss if no failures; keep open on failures so user can see what went wrong
+            if downloadFailures.isEmpty {
+                onComplete()
+            }
         }
     }
 
@@ -111,8 +116,6 @@ class OpenverseSearchState: ObservableObject {
                 if let (data, _) = try? await URLSession.shared.data(from: url),
                    let nsImage = NSImage(data: data) {
                     thumbnailCache[image.id] = nsImage
-                    // Trigger a view refresh
-                    objectWillChange.send()
                 }
             }
         }
@@ -277,7 +280,9 @@ struct OpenverseSearchSheet: View {
                 }
 
                 Button("Add to Batch") {
-                    state.downloadSelected(into: batchState)
+                    state.downloadSelected(into: batchState) {
+                        dismiss()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(state.selectedImageIDs.isEmpty || state.isDownloading)
