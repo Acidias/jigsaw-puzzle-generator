@@ -479,11 +479,12 @@ private struct DatasetRowView: View {
 struct DatasetDetailView: View {
     @ObservedObject var dataset: PuzzleDataset
     @ObservedObject var datasetState: DatasetState
+    @State private var samplePairs: [SamplePair] = []
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .long
-        f.timeStyle = .medium
+        f.timeStyle = .short
         return f
     }()
 
@@ -493,50 +494,59 @@ struct DatasetDetailView: View {
                 // Header
                 VStack(spacing: 8) {
                     Image(systemName: "brain.filled.head.profile")
-                        .font(.system(size: 40))
+                        .font(.system(size: 48))
                         .foregroundStyle(.purple)
                     Text(dataset.name)
                         .font(.title2)
                         .fontWeight(.semibold)
-                    Text("Source: \(dataset.sourceProjectName)")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Text(Self.dateFormatter.string(from: dataset.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+
+                    HStack(spacing: 16) {
+                        Label(dataset.sourceProjectName, systemImage: "folder")
+                        Label(Self.dateFormatter.string(from: dataset.createdAt), systemImage: "calendar")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 8)
 
-                // Summary
-                GroupBox("Summary") {
-                    VStack(spacing: 8) {
-                        summaryRow("Total pairs", value: "\(dataset.totalPairs)")
-                        summaryRow("Piece size", value: "\(dataset.configuration.pieceSize) px")
-                        let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
-                        summaryRow("Canvas size", value: "\(canvasSize) x \(canvasSize) px")
-                        summaryRow("Fill", value: dataset.configuration.pieceFill.rawValue)
-                        summaryRow("Cuts per image", value: "\(dataset.configuration.cutsPerImage)")
-                    }
-                    .padding(8)
+                // Stats bar
+                HStack(spacing: 24) {
+                    statBadge(value: "\(dataset.totalPairs)", label: "Total pairs", icon: "square.grid.2x2", colour: .purple)
+                    let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
+                    statBadge(value: "\(canvasSize)px", label: "Canvas", icon: "square.resize", colour: .blue)
+                    statBadge(value: "\(dataset.configuration.cutsPerImage)", label: "Cuts/image", icon: "scissors", colour: .orange)
+                    statBadge(value: dataset.configuration.pieceFill.rawValue, label: "Fill", icon: "paintbrush", colour: .teal)
                 }
 
-                // Split breakdown
+                // Split breakdown with visual bars
                 GroupBox("Split Breakdown") {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 16) {
                         ForEach(DatasetSplit.allCases, id: \.rawValue) { split in
-                            splitSection(split)
+                            splitBreakdownRow(split)
                         }
                     }
                     .padding(8)
                 }
 
-                // Requested vs actual
-                GroupBox("Requested Counts") {
-                    VStack(spacing: 4) {
-                        requestedRow("Correct", count: dataset.configuration.correctCount)
-                        requestedRow("Shape match", count: dataset.configuration.wrongShapeMatchCount)
-                        requestedRow("Image match", count: dataset.configuration.wrongImageMatchCount)
-                        requestedRow("Nothing", count: dataset.configuration.wrongNothingCount)
+                // Sample pair previews
+                if !samplePairs.isEmpty {
+                    samplePairsSection
+                }
+
+                // Config details
+                GroupBox("Generation Config") {
+                    VStack(spacing: 6) {
+                        configRow("Piece size", value: "\(dataset.configuration.pieceSize) px")
+                        configRow("Grid", value: "1 x 2")
+                        Divider()
+                        configRow("Correct (requested)", value: "\(dataset.configuration.correctCount)")
+                        configRow("Shape match (requested)", value: "\(dataset.configuration.wrongShapeMatchCount)")
+                        configRow("Image match (requested)", value: "\(dataset.configuration.wrongImageMatchCount)")
+                        configRow("Nothing (requested)", value: "\(dataset.configuration.wrongNothingCount)")
+                        Divider()
+                        configRow("Train ratio", value: String(format: "%.0f%%", dataset.configuration.trainRatio * 100))
+                        configRow("Test ratio", value: String(format: "%.0f%%", dataset.configuration.testRatio * 100))
+                        configRow("Valid ratio", value: String(format: "%.0f%%", dataset.configuration.validRatio * 100))
                     }
                     .padding(8)
                 }
@@ -548,70 +558,176 @@ struct DatasetDetailView: View {
                     } label: {
                         Label("Export...", systemImage: "square.and.arrow.up")
                     }
+                    .buttonStyle(.bordered)
 
                     Button(role: .destructive) {
                         datasetState.deleteDataset(dataset)
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
+                    .buttonStyle(.bordered)
                 }
 
                 Spacer(minLength: 20)
             }
             .padding()
         }
-    }
-
-    private func summaryRow(_ label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.callout)
-                .fontWeight(.medium)
+        .task(id: dataset.id) {
+            samplePairs = loadSamplePairs()
         }
     }
 
-    private func splitSection(_ split: DatasetSplit) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            let catCounts = dataset.splitCounts[split] ?? [:]
-            let splitTotal = catCounts.values.reduce(0, +)
+    // MARK: - Stat Badge
 
+    private func statBadge(value: String, label: String, icon: String, colour: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(colour)
+            Text(value)
+                .font(.callout)
+                .fontWeight(.semibold)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(minWidth: 70)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(colour.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Split Breakdown
+
+    private func splitBreakdownRow(_ split: DatasetSplit) -> some View {
+        let catCounts = dataset.splitCounts[split] ?? [:]
+        let splitTotal = catCounts.values.reduce(0, +)
+        let maxCount = dataset.totalPairs > 0 ? dataset.totalPairs : 1
+
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(split.rawValue.capitalized)
                     .font(.callout)
                     .fontWeight(.semibold)
                 Spacer()
                 Text("\(splitTotal) pairs")
-                    .font(.callout)
+                    .font(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(DatasetCategory.allCases, id: \.rawValue) { category in
-                HStack {
-                    Text("  \(category.displayName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(catCounts[category] ?? 0)")
-                        .font(.caption.monospacedDigit())
+            // Stacked bar
+            GeometryReader { geo in
+                HStack(spacing: 1) {
+                    ForEach(DatasetCategory.allCases, id: \.rawValue) { category in
+                        let count = catCounts[category] ?? 0
+                        let width = maxCount > 0 ? geo.size.width * CGFloat(count) / CGFloat(maxCount) : 0
+                        Rectangle()
+                            .fill(categoryColour(category))
+                            .frame(width: max(width, count > 0 ? 2 : 0))
+                            .help("\(category.displayName): \(count)")
+                    }
+                }
+            }
+            .frame(height: 8)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .background(Color.primary.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            // Category counts
+            HStack(spacing: 12) {
+                ForEach(DatasetCategory.allCases, id: \.rawValue) { category in
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(categoryColour(category))
+                            .frame(width: 8, height: 8)
+                        Text("\(category.displayName): \(catCounts[category] ?? 0)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
     }
 
-    private func requestedRow(_ label: String, count: Int) -> some View {
-        HStack {
-            Text(label)
-                .font(.caption)
-                .frame(width: 100, alignment: .leading)
-            Spacer()
-            Text("\(count)")
-                .font(.caption.monospacedDigit())
+    private func categoryColour(_ category: DatasetCategory) -> Color {
+        switch category {
+        case .correct: return .green
+        case .wrongShapeMatch: return .orange
+        case .wrongImageMatch: return .blue
+        case .wrongNothing: return .red
         }
     }
+
+    // MARK: - Sample Pairs
+
+    private var samplePairsSection: some View {
+        GroupBox("Sample Pairs") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                ForEach(samplePairs, id: \.id) { pair in
+                    SamplePairCard(pair: pair)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    // MARK: - Config
+
+    private func configRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.callout.monospacedDigit())
+                .fontWeight(.medium)
+        }
+    }
+
+    // MARK: - Sample Loading
+
+    private func loadSamplePairs() -> [SamplePair] {
+        let datasetDir = DatasetStore.datasetDirectory(for: dataset.id)
+        let fm = FileManager.default
+        var pairs: [SamplePair] = []
+
+        // Load up to 2 samples per category from the train split
+        for category in DatasetCategory.allCases {
+            let catDir = datasetDir
+                .appendingPathComponent("train")
+                .appendingPathComponent(category.rawValue)
+            guard fm.fileExists(atPath: catDir.path) else { continue }
+
+            // Find pair files
+            guard let files = try? fm.contentsOfDirectory(at: catDir, includingPropertiesForKeys: nil)
+                .filter({ $0.lastPathComponent.hasSuffix("_left.png") })
+                .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+            else { continue }
+
+            for leftFile in files.prefix(2) {
+                let rightFile = catDir.appendingPathComponent(
+                    leftFile.lastPathComponent.replacingOccurrences(of: "_left.png", with: "_right.png")
+                )
+                guard fm.fileExists(atPath: rightFile.path),
+                      let leftImage = NSImage(contentsOf: leftFile),
+                      let rightImage = NSImage(contentsOf: rightFile) else { continue }
+
+                pairs.append(SamplePair(
+                    category: category,
+                    leftImage: leftImage,
+                    rightImage: rightImage,
+                    filename: leftFile.deletingPathExtension().lastPathComponent
+                        .replacingOccurrences(of: "_left", with: "")
+                ))
+            }
+        }
+
+        return pairs
+    }
+
+    // MARK: - Actions
 
     private func exportDataset() {
         let panel = NSOpenPanel()
@@ -629,5 +745,71 @@ struct DatasetDetailView: View {
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
+    }
+}
+
+// MARK: - Sample Pair Model
+
+private struct SamplePair: Identifiable {
+    let id = UUID()
+    let category: DatasetCategory
+    let leftImage: NSImage
+    let rightImage: NSImage
+    let filename: String
+}
+
+// MARK: - Sample Pair Card
+
+private struct SamplePairCard: View {
+    let pair: SamplePair
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Side-by-side pieces
+            HStack(spacing: 4) {
+                Image(nsImage: pair.leftImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxHeight: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                Image(nsImage: pair.rightImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxHeight: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+
+            // Label
+            HStack(spacing: 6) {
+                categoryBadge(pair.category)
+                Text(pair.filename)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(8)
+        .background(Color.primary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func categoryBadge(_ category: DatasetCategory) -> some View {
+        let colour: Color = switch category {
+        case .correct: .green
+        case .wrongShapeMatch: .orange
+        case .wrongImageMatch: .blue
+        case .wrongNothing: .red
+        }
+
+        Text(category.displayName)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(colour)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(colour.opacity(0.12))
+            .clipShape(Capsule())
     }
 }
