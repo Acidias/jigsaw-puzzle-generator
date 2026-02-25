@@ -6,6 +6,9 @@ struct ConfigurationPanel: View {
 
     @State private var columns: Int = 5
     @State private var rows: Int = 5
+    @State private var normalise = false
+    @State private var pieceSize: Int = 224
+    @State private var pieceFill: PieceFill = .none
     @State private var showErrorAlert = false
     @State private var errorMessage: String?
     @State private var isGenerating = false
@@ -52,6 +55,47 @@ struct ConfigurationPanel: View {
                     }
                 }
 
+                // Normalisation controls
+                Divider()
+
+                Toggle("Normalise for AI", isOn: $normalise)
+                    .font(.callout)
+                    .fontWeight(.medium)
+
+                if normalise {
+                    HStack(spacing: 16) {
+                        HStack(spacing: 8) {
+                            Text("Piece size:")
+                                .font(.callout)
+                            TextField(
+                                "224",
+                                value: $pieceSize,
+                                format: .number
+                            )
+                            .frame(width: 60)
+                            .textFieldStyle(.roundedBorder)
+                            Stepper("", value: $pieceSize, in: 32...1024, step: 16)
+                                .labelsHidden()
+                            Text("px")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Picker("Fill:", selection: $pieceFill) {
+                            Text("None (transparent)").tag(PieceFill.none)
+                            Text("Black").tag(PieceFill.black)
+                            Text("White").tag(PieceFill.white)
+                            Text("Average grey").tag(PieceFill.grey)
+                        }
+                        .font(.callout)
+                        .frame(maxWidth: 220)
+                    }
+
+                    Text("Target: \(columns * pieceSize) x \(rows * pieceSize) px (\(pieceSize) px/piece)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 HStack {
                     Text("\(columns * rows) pieces per image, \(project.images.count) image\(project.images.count == 1 ? "" : "s")")
                         .font(.callout)
@@ -81,10 +125,18 @@ struct ConfigurationPanel: View {
     private func generatePuzzle() {
         guard !isGenerating, !project.images.isEmpty else { return }
 
-        var config = PuzzleConfiguration(columns: columns, rows: rows)
+        var config = PuzzleConfiguration(
+            columns: columns,
+            rows: rows,
+            pieceSize: normalise ? pieceSize : nil,
+            pieceFill: normalise ? pieceFill : .none
+        )
         config.validate()
         columns = config.columns
         rows = config.rows
+        if let size = config.pieceSize {
+            pieceSize = size
+        }
 
         let cut = PuzzleCut(configuration: config)
 

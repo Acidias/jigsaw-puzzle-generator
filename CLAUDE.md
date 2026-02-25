@@ -42,6 +42,7 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
 - Each edge has 4 bezier segments with randomised control points for natural-looking tabs/blanks
 - Adjacent pieces share edge curves (one traverses forward, the other reversed) for perfect interlocking
 - Piece images clipped via CGContext and saved as transparent PNGs to disk for lazy loading
+- **AI normalisation**: optional pipeline that centre-crops source to grid aspect ratio, resizes to exact `cols*pieceSize x rows*pieceSize`, generates pieces, then pads all pieces to uniform square canvas with configurable fill (none/black/white/average grey). Ensures identical pixel dimensions across all pieces for ML training.
 - Grid size: configurable from 1x2 to 100x100
 - Pieces identified by numeric IDs with bounding boxes and neighbour lists
 - Adjacency computed from grid position (trivial on a regular grid)

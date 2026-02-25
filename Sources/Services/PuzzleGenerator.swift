@@ -64,8 +64,18 @@ actor PuzzleGenerator {
 
         onProgress(0.05)
 
-        // Upscale small images for smooth bezier edges
-        let workingImage = ImageScaler.upscaleIfNeeded(sourceImage)
+        // Prepare working image: normalise or upscale
+        let workingImage: CGImage
+        if let pieceSize = config.pieceSize {
+            // AI normalisation: crop to grid aspect ratio, resize to exact dimensions
+            let cropped = ImageScaler.cropToAspectRatio(sourceImage, cols: cols, rows: rows)
+            let targetWidth = cols * pieceSize
+            let targetHeight = rows * pieceSize
+            workingImage = ImageScaler.resize(cropped, toWidth: targetWidth, height: targetHeight)
+        } else {
+            // Standard path: upscale small images for smooth bezier edges
+            workingImage = ImageScaler.upscaleIfNeeded(sourceImage)
+        }
         let imageWidth = workingImage.width
         let imageHeight = workingImage.height
 
@@ -186,6 +196,76 @@ actor PuzzleGenerator {
 
         guard !pieces.isEmpty else {
             return .failure(.noPiecesGenerated)
+        }
+
+        // Post-processing: pad pieces to uniform canvas when normalising
+        if config.pieceSize != nil {
+            let maxDim = pieces.reduce(0) { maxVal, piece in
+                max(maxVal, piece.pieceWidth, piece.pieceHeight)
+            }
+
+            // Determine fill colour
+            let fillColour: CGColor
+            switch config.pieceFill {
+            case .none:
+                fillColour = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
+            case .black:
+                fillColour = CGColor(gray: 0, alpha: 1)
+            case .white:
+                fillColour = CGColor(gray: 1, alpha: 1)
+            case .grey:
+                fillColour = PieceClipper.averageColour(of: workingImage)
+            }
+
+            for i in 0..<pieces.count {
+                let piece = pieces[i]
+                guard let pieceURL = piece.imagePath else { continue }
+
+                // Load piece PNG from disk
+                guard let imageSource = CGImageSourceCreateWithURL(pieceURL as CFURL, nil),
+                      let pieceImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                    continue
+                }
+
+                // Pad to uniform square canvas
+                guard let padded = PieceClipper.padToCanvas(
+                    pieceImage: pieceImage,
+                    canvasSize: maxDim,
+                    fillColour: fillColour
+                ) else {
+                    continue
+                }
+
+                // Overwrite the piece PNG
+                do {
+                    try PieceClipper.writePNG(padded, to: pieceURL)
+                } catch {
+                    return .failure(.pieceExportFailed(
+                        "Piece \(piece.pieceIndex) padding: \(error.localizedDescription)"
+                    ))
+                }
+
+                // Update piece dimensions
+                pieces[i] = PuzzlePiece(
+                    id: piece.id,
+                    pieceIndex: piece.pieceIndex,
+                    row: piece.row,
+                    col: piece.col,
+                    x1: piece.x1,
+                    y1: piece.y1,
+                    x2: piece.x2,
+                    y2: piece.y2,
+                    pieceWidth: maxDim,
+                    pieceHeight: maxDim,
+                    pieceType: piece.pieceType,
+                    neighbourIDs: piece.neighbourIDs,
+                    imagePath: piece.imagePath
+                )
+
+                // Report post-processing progress (0.90 to 0.94)
+                let postProgress = 0.90 + 0.04 * Double(i + 1) / Double(pieces.count)
+                onProgress(postProgress)
+            }
         }
 
         // Render the lines overlay

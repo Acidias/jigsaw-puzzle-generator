@@ -173,6 +173,7 @@ struct BatchItemRow: View {
 
 struct BatchSettingsPanel: View {
     @Binding var configuration: BatchConfiguration
+    @State private var normalise = false
 
     var body: some View {
         GroupBox("Batch Settings") {
@@ -222,6 +223,67 @@ struct BatchSettingsPanel: View {
                             .labelsHidden()
                         }
                     }
+                }
+
+                Divider()
+
+                // Normalisation controls
+                Toggle("Normalise for AI", isOn: $normalise)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .onChange(of: normalise) { _, newValue in
+                        if !newValue {
+                            configuration.puzzleConfig.pieceSize = nil
+                            configuration.puzzleConfig.pieceFill = .none
+                        } else {
+                            configuration.puzzleConfig.pieceSize = configuration.puzzleConfig.pieceSize ?? 224
+                        }
+                    }
+
+                if normalise {
+                    HStack(spacing: 16) {
+                        HStack(spacing: 8) {
+                            Text("Piece size:")
+                                .font(.callout)
+                            TextField(
+                                "224",
+                                value: Binding(
+                                    get: { configuration.puzzleConfig.pieceSize ?? 224 },
+                                    set: { configuration.puzzleConfig.pieceSize = $0 }
+                                ),
+                                format: .number
+                            )
+                            .frame(width: 60)
+                            .textFieldStyle(.roundedBorder)
+                            Stepper(
+                                "",
+                                value: Binding(
+                                    get: { configuration.puzzleConfig.pieceSize ?? 224 },
+                                    set: { configuration.puzzleConfig.pieceSize = $0 }
+                                ),
+                                in: 32...1024,
+                                step: 16
+                            )
+                            .labelsHidden()
+                            Text("px")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Picker("Fill:", selection: $configuration.puzzleConfig.pieceFill) {
+                            Text("None (transparent)").tag(PieceFill.none)
+                            Text("Black").tag(PieceFill.black)
+                            Text("White").tag(PieceFill.white)
+                            Text("Average grey").tag(PieceFill.grey)
+                        }
+                        .font(.callout)
+                        .frame(maxWidth: 220)
+                    }
+
+                    let ps = configuration.puzzleConfig.pieceSize ?? 224
+                    Text("Target: \(configuration.puzzleConfig.columns * ps) x \(configuration.puzzleConfig.rows * ps) px (\(ps) px/piece)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Divider()

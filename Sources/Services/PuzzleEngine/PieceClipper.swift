@@ -88,8 +88,103 @@ enum PieceClipper {
         )
     }
 
-    /// Write a CGImage as PNG to the given URL.
-    private static func writePNG(_ image: CGImage, to url: URL) throws {
+    // MARK: - Post-processing for normalisation
+
+    /// Create a square canvas of the given size, fill with the background colour,
+    /// and centre the piece image on it.
+    static func padToCanvas(pieceImage: CGImage, canvasSize: Int, fillColour: CGColor) -> CGImage? {
+        guard canvasSize > 0 else { return nil }
+
+        guard let context = CGContext(
+            data: nil,
+            width: canvasSize,
+            height: canvasSize,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: pieceImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+
+        // Fill background
+        context.setFillColor(fillColour)
+        context.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+
+        // Centre the piece on the canvas
+        let x = (canvasSize - pieceImage.width) / 2
+        let y = (canvasSize - pieceImage.height) / 2
+        context.draw(
+            pieceImage,
+            in: CGRect(x: x, y: y, width: pieceImage.width, height: pieceImage.height)
+        )
+
+        return context.makeImage()
+    }
+
+    /// Compute the average grey value from a source image.
+    /// Returns a CGColor in device grey colour space.
+    static func averageColour(of image: CGImage) -> CGColor {
+        let width = image.width
+        let height = image.height
+        let totalPixels = width * height
+        guard totalPixels > 0 else {
+            return CGColor(gray: 0.5, alpha: 1.0)
+        }
+
+        // Sample at reduced resolution for large images (max ~256x256)
+        let sampleWidth: Int
+        let sampleHeight: Int
+        if totalPixels > 65536 {
+            let scale = sqrt(65536.0 / Double(totalPixels))
+            sampleWidth = max(1, Int(Double(width) * scale))
+            sampleHeight = max(1, Int(Double(height) * scale))
+        } else {
+            sampleWidth = width
+            sampleHeight = height
+        }
+
+        guard let context = CGContext(
+            data: nil,
+            width: sampleWidth,
+            height: sampleHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: sampleWidth * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return CGColor(gray: 0.5, alpha: 1.0)
+        }
+
+        context.draw(image, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
+
+        guard let data = context.data else {
+            return CGColor(gray: 0.5, alpha: 1.0)
+        }
+
+        let pixels = data.bindMemory(to: UInt8.self, capacity: sampleWidth * sampleHeight * 4)
+        var totalR: UInt64 = 0
+        var totalG: UInt64 = 0
+        var totalB: UInt64 = 0
+        let count = sampleWidth * sampleHeight
+
+        for i in 0..<count {
+            let offset = i * 4
+            totalR += UInt64(pixels[offset])
+            totalG += UInt64(pixels[offset + 1])
+            totalB += UInt64(pixels[offset + 2])
+        }
+
+        let avgR = CGFloat(totalR) / CGFloat(count) / 255.0
+        let avgG = CGFloat(totalG) / CGFloat(count) / 255.0
+        let avgB = CGFloat(totalB) / CGFloat(count) / 255.0
+        let grey = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB
+
+        return CGColor(gray: grey, alpha: 1.0)
+    }
+
+    /// Write a CGImage as PNG to the given URL (public for post-processing overwrite).
+    static func writePNG(_ image: CGImage, to url: URL) throws {
         guard let destination = CGImageDestinationCreateWithURL(
             url as CFURL,
             UTType.png.identifier as CFString,
