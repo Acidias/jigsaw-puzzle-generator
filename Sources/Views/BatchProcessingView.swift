@@ -13,21 +13,28 @@ struct BatchProcessingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavigationSplitView {
-                List(selection: $selectedSource) {
-                    Label("Local Images", systemImage: "folder")
-                        .tag(BatchSource.local)
-                    Label("Openverse", systemImage: "globe")
-                        .tag(BatchSource.openverse)
+            HStack(spacing: 0) {
+                // Sidebar
+                VStack(spacing: 4) {
+                    sidebarButton(label: "Local Images", icon: "folder", source: .local)
+                    sidebarButton(label: "Openverse", icon: "globe", source: .openverse)
+                    Spacer()
                 }
-                .listStyle(.sidebar)
-                .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 200)
-            } detail: {
-                if selectedSource == .local {
-                    LocalImagesPanel(batchState: batchState)
-                } else {
-                    OpenversePanel(batchState: batchState, state: openverseState)
+                .padding(8)
+                .frame(width: 170)
+                .background(.ultraThinMaterial)
+
+                Divider()
+
+                // Detail
+                Group {
+                    if selectedSource == .local {
+                        LocalImagesPanel(batchState: batchState)
+                    } else {
+                        OpenversePanel(batchState: batchState, state: openverseState)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             Divider()
@@ -50,6 +57,24 @@ struct BatchProcessingView: View {
         }
         .frame(minWidth: 600, minHeight: 500)
     }
+
+    private func sidebarButton(label: String, icon: String, source: BatchSource) -> some View {
+        Button {
+            selectedSource = source
+        } label: {
+            Label(label, systemImage: icon)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .background(
+                    selectedSource == source
+                        ? Color.accentColor.opacity(0.2)
+                        : Color.clear
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - Local Images Panel
@@ -60,18 +85,21 @@ private struct LocalImagesPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if batchState.items.isEmpty {
-                emptyState
-            } else {
-                itemList
-            }
-        }
-        .toolbar {
-            ToolbarItemGroup {
+            HStack {
                 Button("Choose Images...") {
                     chooseImages()
                 }
                 .disabled(batchState.isRunning)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            if batchState.items.isEmpty {
+                emptyState
+            } else {
+                itemList
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
