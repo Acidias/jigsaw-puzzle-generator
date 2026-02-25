@@ -234,7 +234,8 @@ actor PuzzleGenerator {
     private func findScript() -> String? {
         // When running via `swift run`, the executable is in .build/
         // The script is in Scripts/ relative to the project root
-        let executablePath = ProcessInfo.processInfo.arguments[0]
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let executablePath = arguments.first else { return nil }
         let executableURL = URL(fileURLWithPath: executablePath)
 
         // Try relative to executable (for swift run from project root)

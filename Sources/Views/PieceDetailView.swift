@@ -4,6 +4,9 @@ struct PieceDetailView: View {
     @ObservedObject var project: PuzzleProject
     let piece: PuzzlePiece
 
+    @State private var exportError: String?
+    @State private var showExportError = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -19,10 +22,18 @@ struct PieceDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .shadow(radius: 4)
                 } else {
-                    Image(systemName: "puzzlepiece")
-                        .font(.system(size: 64))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 200, height: 200)
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.orange)
+                        Text("Image unavailable")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text("The piece image file may have been deleted.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(width: 200, height: 200)
                 }
 
                 // Piece info
@@ -53,6 +64,11 @@ struct PieceDetailView: View {
             .padding(.vertical)
         }
         .navigationTitle(piece.displayLabel)
+        .alert("Export Failed", isPresented: $showExportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportError ?? "An unknown error occurred.")
+        }
     }
 
     private func infoRow(_ label: String, value: String) -> some View {
@@ -80,19 +96,27 @@ struct PieceDetailView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        // Fast path: copy the file directly from disk
-        if let sourcePath = piece.imagePath,
-           FileManager.default.fileExists(atPath: sourcePath.path) {
-            try? FileManager.default.copyItem(at: sourcePath, to: url)
-            return
-        }
+        do {
+            // Fast path: copy the file directly from disk
+            if let sourcePath = piece.imagePath,
+               FileManager.default.fileExists(atPath: sourcePath.path) {
+                try FileManager.default.copyItem(at: sourcePath, to: url)
+                return
+            }
 
-        // Fallback: re-encode from NSImage
-        if let image = piece.image,
-           let tiffData = image.tiffRepresentation,
-           let bitmap = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmap.representation(using: .png, properties: [:]) {
-            try? pngData.write(to: url)
+            // Fallback: re-encode from NSImage
+            guard let image = piece.image,
+                  let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData),
+                  let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                exportError = "The piece image is unavailable. The source file may have been deleted."
+                showExportError = true
+                return
+            }
+            try pngData.write(to: url)
+        } catch {
+            exportError = "Failed to save piece: \(error.localizedDescription)"
+            showExportError = true
         }
     }
 }

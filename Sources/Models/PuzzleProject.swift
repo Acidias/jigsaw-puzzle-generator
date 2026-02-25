@@ -21,9 +21,19 @@ class PuzzleProject: ObservableObject, Identifiable {
     /// Path to the piecemaker output directory for this generation.
     var outputDirectory: URL?
 
-    /// Image dimensions for display.
-    var imageWidth: Int { Int(sourceImage.size.width) }
-    var imageHeight: Int { Int(sourceImage.size.height) }
+    /// Image dimensions in pixels (not points) for accurate metadata.
+    var imageWidth: Int {
+        guard let rep = sourceImage.representations.first else {
+            return Int(sourceImage.size.width)
+        }
+        return rep.pixelsWide > 0 ? rep.pixelsWide : Int(sourceImage.size.width)
+    }
+    var imageHeight: Int {
+        guard let rep = sourceImage.representations.first else {
+            return Int(sourceImage.size.height)
+        }
+        return rep.pixelsHigh > 0 ? rep.pixelsHigh : Int(sourceImage.size.height)
+    }
 
     init(name: String, sourceImage: NSImage, sourceImageURL: URL? = nil) {
         self.id = UUID()

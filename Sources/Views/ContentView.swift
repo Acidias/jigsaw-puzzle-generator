@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var isDragTargeted = false
+    @State private var errorMessage: String?
+    @State private var showErrorAlert = false
 
     var body: some View {
         NavigationSplitView {
@@ -51,6 +53,16 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
         }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
+        }
+    }
+
+    private func showError(_ message: String) {
+        errorMessage = message
+        showErrorAlert = true
     }
 
     private func importImage() {
@@ -65,7 +77,10 @@ struct ContentView: View {
     }
 
     private func loadImage(from url: URL) {
-        guard let image = NSImage(contentsOf: url) else { return }
+        guard let image = NSImage(contentsOf: url) else {
+            showError("Could not open \"\(url.lastPathComponent)\". The file may be corrupted or in an unsupported format.")
+            return
+        }
         let name = url.deletingPathExtension().lastPathComponent
         let project = PuzzleProject(name: name, sourceImage: image, sourceImageURL: url)
         appState.addProject(project)
@@ -75,10 +90,21 @@ struct ContentView: View {
         for provider in providers {
             // Try loading as a file URL first
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, error in
+                    if let error = error {
+                        Task { @MainActor in
+                            showError("Failed to read dropped file: \(error.localizedDescription)")
+                        }
+                        return
+                    }
                     guard let data = data as? Data,
                           let url = URL(dataRepresentation: data, relativeTo: nil)
-                    else { return }
+                    else {
+                        Task { @MainActor in
+                            showError("Could not read the dropped file.")
+                        }
+                        return
+                    }
 
                     Task { @MainActor in
                         loadImage(from: url)
@@ -89,8 +115,19 @@ struct ContentView: View {
 
             // Try loading as image data
             if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-                    guard let data = data, let image = NSImage(data: data) else { return }
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
+                    if let error = error {
+                        Task { @MainActor in
+                            showError("Failed to read dropped image: \(error.localizedDescription)")
+                        }
+                        return
+                    }
+                    guard let data = data, let image = NSImage(data: data) else {
+                        Task { @MainActor in
+                            showError("The dropped image could not be decoded. It may be in an unsupported format.")
+                        }
+                        return
+                    }
                     Task { @MainActor in
                         let project = PuzzleProject(name: "Dropped Image", sourceImage: image)
                         appState.addProject(project)
@@ -113,8 +150,10 @@ struct ContentView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        Task {
-            await ExportService.export(project: project, to: url)
+        do {
+            try ExportService.export(project: project, to: url)
+        } catch {
+            showError(error.localizedDescription)
         }
     }
 }
