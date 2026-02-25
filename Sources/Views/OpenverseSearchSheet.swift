@@ -59,7 +59,7 @@ class OpenverseSearchState: ObservableObject {
         }
     }
 
-    func downloadSelected(into batchState: BatchState, onComplete: @escaping () -> Void) {
+    func downloadSelected(into batchState: BatchState) {
         let selected = results.filter { selectedImageIDs.contains($0.id) }
         guard !selected.isEmpty else { return }
 
@@ -88,11 +88,6 @@ class OpenverseSearchState: ObservableObject {
                 downloadCompleted += 1
             }
             isDownloading = false
-
-            // Auto-dismiss if no failures; keep open on failures so user can see what went wrong
-            if downloadFailures.isEmpty {
-                onComplete()
-            }
         }
     }
 
@@ -122,12 +117,11 @@ class OpenverseSearchState: ObservableObject {
     }
 }
 
-// MARK: - Search Sheet View
+// MARK: - Openverse Panel
 
-struct OpenverseSearchSheet: View {
+struct OpenversePanel: View {
     @ObservedObject var batchState: BatchState
-    @Binding var isPresented: Bool
-    @StateObject private var state = OpenverseSearchState()
+    @ObservedObject var state: OpenverseSearchState
 
     var body: some View {
         VStack(spacing: 0) {
@@ -275,21 +269,14 @@ struct OpenverseSearchSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button("Cancel") {
-                    isPresented = false
-                }
-
                 Button("Add to Batch") {
-                    state.downloadSelected(into: batchState) {
-                        isPresented = false
-                    }
+                    state.downloadSelected(into: batchState)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(state.selectedImageIDs.isEmpty || state.isDownloading)
             }
             .padding()
         }
-        .frame(minWidth: 650, minHeight: 500)
     }
 }
 

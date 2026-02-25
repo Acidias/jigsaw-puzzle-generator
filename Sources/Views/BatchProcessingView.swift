@@ -1,54 +1,77 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum BatchSource: String, CaseIterable, Hashable {
+    case local
+    case openverse
+}
+
 struct BatchProcessingView: View {
     @StateObject private var batchState = BatchState()
-    @State private var isDragTargeted = false
-    @State private var showOpenverseSheet = false
+    @StateObject private var openverseState = OpenverseSearchState()
+    @State private var selectedSource: BatchSource = .local
 
     var body: some View {
-        if showOpenverseSheet {
-            OpenverseSearchSheet(batchState: batchState, isPresented: $showOpenverseSheet)
-        } else {
-            VStack(spacing: 0) {
-                // Image list
-                BatchImageList(batchState: batchState, isDragTargeted: $isDragTargeted)
-
-                Divider()
-
-                // Settings panel
-                BatchSettingsPanel(configuration: $batchState.configuration)
-                    .padding()
-                    .disabled(batchState.isRunning)
-
-                Divider()
-
-                // Progress and controls
-                VStack(spacing: 12) {
-                    if !batchState.items.isEmpty {
-                        BatchProgressBar(batchState: batchState)
-                    }
-                    BatchControls(batchState: batchState, showOpenverseSheet: $showOpenverseSheet)
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                List(selection: $selectedSource) {
+                    Label("Local Images", systemImage: "folder")
+                        .tag(BatchSource.local)
+                    Label("Openverse", systemImage: "globe")
+                        .tag(BatchSource.openverse)
                 }
-                .padding()
+                .listStyle(.sidebar)
+                .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 200)
+            } detail: {
+                if selectedSource == .local {
+                    LocalImagesPanel(batchState: batchState)
+                } else {
+                    OpenversePanel(batchState: batchState, state: openverseState)
+                }
             }
-            .frame(minWidth: 600, minHeight: 500)
+
+            Divider()
+
+            // Settings panel
+            BatchSettingsPanel(configuration: $batchState.configuration)
+                .padding()
+                .disabled(batchState.isRunning)
+
+            Divider()
+
+            // Progress and controls
+            VStack(spacing: 12) {
+                if !batchState.items.isEmpty {
+                    BatchProgressBar(batchState: batchState)
+                }
+                BatchControls(batchState: batchState)
+            }
+            .padding()
         }
+        .frame(minWidth: 600, minHeight: 500)
     }
 }
 
-// MARK: - Image List
+// MARK: - Local Images Panel
 
-private struct BatchImageList: View {
+private struct LocalImagesPanel: View {
     @ObservedObject var batchState: BatchState
-    @Binding var isDragTargeted: Bool
+    @State private var isDragTargeted = false
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             if batchState.items.isEmpty {
                 emptyState
             } else {
                 itemList
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup {
+                Button("Choose Images...") {
+                    chooseImages()
+                }
+                .disabled(batchState.isRunning)
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
@@ -93,6 +116,17 @@ private struct BatchImageList: View {
             }
         }
         .listStyle(.inset(alternatesRowBackgrounds: true))
+    }
+
+    private func chooseImages() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.message = "Choose images for batch processing"
+
+        guard panel.runModal() == .OK else { return }
+        batchState.addImages(from: panel.urls)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -319,21 +353,9 @@ private struct BatchProgressBar: View {
 
 private struct BatchControls: View {
     @ObservedObject var batchState: BatchState
-    @Binding var showOpenverseSheet: Bool
 
     var body: some View {
         HStack {
-            // Choose and clear buttons
-            Button("Choose Images...") {
-                chooseImages()
-            }
-            .disabled(batchState.isRunning)
-
-            Button("Search Openverse...") {
-                showOpenverseSheet = true
-            }
-            .disabled(batchState.isRunning)
-
             if !batchState.items.isEmpty {
                 Button("Clear All") {
                     batchState.clearAll()
@@ -390,17 +412,6 @@ private struct BatchControls: View {
                 .disabled(batchState.items.isEmpty)
             }
         }
-    }
-
-    private func chooseImages() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        panel.message = "Choose images for batch processing"
-
-        guard panel.runModal() == .OK else { return }
-        batchState.addImages(from: panel.urls)
     }
 
     private func exportAll() {
