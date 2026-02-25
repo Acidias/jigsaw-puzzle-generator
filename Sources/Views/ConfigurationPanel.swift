@@ -182,11 +182,13 @@ struct ConfigurationPanel: View {
                 case .success(let generation):
                     imageResult.pieces = generation.pieces
                     imageResult.linesImage = generation.linesImage
+                    imageResult.normalisedSourceImage = generation.normalisedSourceImage
                     imageResult.outputDirectory = generation.outputDirectory
 
                     // Persist
                     ProjectStore.moveGeneratedPieces(for: imageResult, cutID: cut.id, in: project)
                     ProjectStore.saveLinesOverlay(for: imageResult, cutID: cut.id, in: project)
+                    ProjectStore.saveNormalisedSource(for: imageResult, cutID: cut.id, in: project)
                     appState.saveProject(project)
 
                 case .failure(let error):

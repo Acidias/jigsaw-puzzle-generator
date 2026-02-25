@@ -6,6 +6,8 @@ import ImageIO
 struct GenerationResult: Sendable {
     let pieces: [PuzzlePiece]
     let linesImage: NSImage?
+    /// The normalised (cropped+resized) source image when AI normalisation is active.
+    let normalisedSourceImage: NSImage?
     let outputDirectory: URL
     let actualPieceCount: Int
 }
@@ -285,9 +287,21 @@ actor PuzzleGenerator {
 
         onProgress(0.95)
 
+        // Build normalised source NSImage when AI normalisation is active
+        let normalisedSource: NSImage?
+        if config.pieceSize != nil {
+            normalisedSource = NSImage(
+                cgImage: workingImage,
+                size: NSSize(width: workingImage.width, height: workingImage.height)
+            )
+        } else {
+            normalisedSource = nil
+        }
+
         return .success(GenerationResult(
             pieces: pieces,
             linesImage: linesImage,
+            normalisedSourceImage: normalisedSource,
             outputDirectory: outputDir,
             actualPieceCount: pieces.count
         ))

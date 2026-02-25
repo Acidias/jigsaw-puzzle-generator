@@ -17,6 +17,8 @@ class CutImageResult: ObservableObject, Identifiable {
     @Published var progress: Double = 0.0
     /// The puzzle cut lines overlay image for this image.
     @Published var linesImage: NSImage?
+    /// The normalised (cropped+resized) source image when AI normalisation was used.
+    @Published var normalisedSourceImage: NSImage?
     /// Last generation error message, shown to the user.
     @Published var lastError: String?
     /// Path to the temp output directory (before persistence).

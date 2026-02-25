@@ -31,6 +31,7 @@ struct CutImageResultManifest: Codable {
     var imageName: String
     var pieces: [PieceManifest]
     var hasLinesOverlay: Bool
+    var hasNormalisedSource: Bool = false
 }
 
 /// Codable manifest for a single puzzle piece.

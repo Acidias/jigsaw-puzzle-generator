@@ -54,12 +54,18 @@ private struct CutImageCard: View {
     @ObservedObject var imageResult: CutImageResult
     let project: PuzzleProject
 
+    /// Use normalised source when available, otherwise original.
+    private var displayImage: NSImage? {
+        if let norm = imageResult.normalisedSourceImage { return norm }
+        return project.images.first(where: { $0.id == imageResult.imageID })?.sourceImage
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // Thumbnail with overlay
             ZStack {
-                if let sourceImage = project.images.first(where: { $0.id == imageResult.imageID }) {
-                    Image(nsImage: sourceImage.sourceImage)
+                if let image = displayImage {
+                    Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(height: 150)
@@ -131,12 +137,26 @@ struct CutImageDetailView: View {
     @ObservedObject var imageResult: CutImageResult
     let configuration: PuzzleConfiguration
 
+    /// Use normalised source when available (AI normalisation), otherwise original.
+    private var displayImage: NSImage {
+        imageResult.normalisedSourceImage ?? sourceImage.sourceImage
+    }
+
+    /// Dimensions label - show normalised size when available.
+    private var dimensionsLabel: String {
+        if let norm = imageResult.normalisedSourceImage,
+           let rep = norm.representations.first, rep.pixelsWide > 0 {
+            return "\(rep.pixelsWide) x \(rep.pixelsHigh) px (normalised)"
+        }
+        return "\(sourceImage.imageWidth) x \(sourceImage.imageHeight) px"
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 // Image with puzzle overlay
                 ZStack {
-                    Image(nsImage: sourceImage.sourceImage)
+                    Image(nsImage: displayImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .overlay {
@@ -175,7 +195,7 @@ struct CutImageDetailView: View {
                 HStack(spacing: 24) {
                     Label("\(configuration.columns) x \(configuration.rows) grid", systemImage: "grid")
                     Label("\(imageResult.pieces.count) pieces", systemImage: "puzzlepiece")
-                    Label("\(sourceImage.imageWidth) x \(sourceImage.imageHeight) px", systemImage: "ruler")
+                    Label(dimensionsLabel, systemImage: "ruler")
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)

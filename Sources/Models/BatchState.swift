@@ -216,6 +216,7 @@ class BatchState: ObservableObject {
                 case .success(let generation):
                     imageResult.pieces = generation.pieces
                     imageResult.linesImage = generation.linesImage
+                    imageResult.normalisedSourceImage = generation.normalisedSourceImage
                     imageResult.outputDirectory = generation.outputDirectory
 
                     item.status = .completed(pieceCount: generation.actualPieceCount)
@@ -223,6 +224,7 @@ class BatchState: ObservableObject {
                     // Persist
                     ProjectStore.moveGeneratedPieces(for: imageResult, cutID: cut.id, in: project)
                     ProjectStore.saveLinesOverlay(for: imageResult, cutID: cut.id, in: project)
+                    ProjectStore.saveNormalisedSource(for: imageResult, cutID: cut.id, in: project)
                     appState.saveProject(project)
 
                     // Auto-export if enabled

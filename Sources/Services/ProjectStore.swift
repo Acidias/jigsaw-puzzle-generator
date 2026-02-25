@@ -103,7 +103,8 @@ enum ProjectStore {
                                     imageFilename: piece.imagePath?.lastPathComponent ?? "piece_\(piece.pieceIndex).png"
                                 )
                             },
-                            hasLinesOverlay: result.linesImage != nil
+                            hasLinesOverlay: result.linesImage != nil,
+                            hasNormalisedSource: result.normalisedSourceImage != nil
                         )
                     }
                 )
@@ -210,15 +211,23 @@ enum ProjectStore {
                         )
                     }
 
+                    let cutImgDir = cutImageDirectory(
+                        projectID: manifest.id,
+                        cutID: cutManifest.id,
+                        imageID: resultManifest.imageID
+                    )
+
                     if resultManifest.hasLinesOverlay {
-                        let cutImgDir = cutImageDirectory(
-                            projectID: manifest.id,
-                            cutID: cutManifest.id,
-                            imageID: resultManifest.imageID
-                        )
                         let linesURL = cutImgDir.appendingPathComponent("lines.png")
                         if let linesImage = NSImage(contentsOf: linesURL) {
                             imageResult.linesImage = linesImage
+                        }
+                    }
+
+                    if resultManifest.hasNormalisedSource {
+                        let normURL = cutImgDir.appendingPathComponent("normalised_source.png")
+                        if let normImage = NSImage(contentsOf: normURL) {
+                            imageResult.normalisedSourceImage = normImage
                         }
                     }
 
@@ -389,6 +398,32 @@ enum ProjectStore {
                 try pngData.write(to: linesURL)
             } catch {
                 print("ProjectStore: Failed to save lines overlay: \(error)")
+            }
+        }
+    }
+
+    /// Saves the normalised (cropped+resized) source image for a cut image result.
+    @MainActor
+    static func saveNormalisedSource(for imageResult: CutImageResult, cutID: UUID, in project: PuzzleProject) {
+        guard let normImage = imageResult.normalisedSourceImage else { return }
+        let cutImgDir = cutImageDirectory(projectID: project.id, cutID: cutID, imageID: imageResult.imageID)
+        let normURL = cutImgDir.appendingPathComponent("normalised_source.png")
+
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: cutImgDir, withIntermediateDirectories: true)
+        } catch {
+            print("ProjectStore: Failed to create cut image directory: \(error)")
+            return
+        }
+
+        if let tiffData = normImage.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiffData),
+           let pngData = bitmap.representation(using: .png, properties: [:]) {
+            do {
+                try pngData.write(to: normURL)
+            } catch {
+                print("ProjectStore: Failed to save normalised source: \(error)")
             }
         }
     }
