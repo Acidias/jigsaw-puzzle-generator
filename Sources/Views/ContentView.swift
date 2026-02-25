@@ -3,23 +3,55 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
-    @Environment(\.openWindow) private var openWindow
+    @StateObject private var batchState = BatchState()
+    @StateObject private var openverseState = OpenverseSearchState()
+    @State private var sidebarSelection: SidebarItem? = nil
     @State private var isDragTargeted = false
     @State private var errorMessage: String?
     @State private var showErrorAlert = false
 
+    private var isBatchSelected: Bool {
+        if case .batchLocal = sidebarSelection { return true }
+        if case .batchOpenverse = sidebarSelection { return true }
+        return false
+    }
+
     var body: some View {
         NavigationSplitView {
-            SidebarView()
+            SidebarView(selection: $sidebarSelection)
         } detail: {
-            if let project = appState.selectedProject {
-                if let piece = appState.selectedPiece {
-                    PieceDetailView(project: project, piece: piece)
-                } else {
-                    ImageDetailView(project: project)
+            VStack(spacing: 0) {
+                // Detail content
+                Group {
+                    switch sidebarSelection {
+                    case .batchLocal:
+                        LocalImagesPanel(batchState: batchState)
+                    case .batchOpenverse:
+                        OpenversePanel(batchState: batchState, state: openverseState)
+                    default:
+                        projectDetailView
+                    }
                 }
-            } else {
-                WelcomeView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Batch bottom panels (only when a batch tab is selected)
+                if isBatchSelected {
+                    Divider()
+
+                    BatchSettingsPanel(configuration: $batchState.configuration)
+                        .padding()
+                        .disabled(batchState.isRunning)
+
+                    Divider()
+
+                    VStack(spacing: 12) {
+                        if !batchState.items.isEmpty {
+                            BatchProgressBar(batchState: batchState)
+                        }
+                        BatchControls(batchState: batchState)
+                    }
+                    .padding()
+                }
             }
         }
         .toolbar {
@@ -30,12 +62,6 @@ struct ContentView: View {
                     Label("Import Image", systemImage: "photo.badge.plus")
                 }
                 .keyboardShortcut("o", modifiers: .command)
-
-                Button {
-                    openWindow(id: "batch")
-                } label: {
-                    Label("Batch Process", systemImage: "rectangle.stack.badge.play")
-                }
 
                 if let project = appState.selectedProject, project.hasGeneratedPieces {
                     Button {
@@ -64,6 +90,35 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "An unknown error occurred.")
+        }
+        // Sync: when a project is added/selected via AppState, update sidebar selection
+        .onChange(of: appState.selectedProjectID) { _, newID in
+            guard let id = newID else { return }
+            if let pieceID = appState.selectedPieceID {
+                sidebarSelection = .piece(pieceID)
+            } else {
+                sidebarSelection = .project(id)
+            }
+        }
+        .onChange(of: appState.selectedPieceID) { _, newID in
+            if let id = newID {
+                sidebarSelection = .piece(id)
+            } else if let projectID = appState.selectedProjectID {
+                sidebarSelection = .project(projectID)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var projectDetailView: some View {
+        if let project = appState.selectedProject {
+            if let piece = appState.selectedPiece {
+                PieceDetailView(project: project, piece: piece)
+            } else {
+                ImageDetailView(project: project)
+            }
+        } else {
+            WelcomeView()
         }
     }
 

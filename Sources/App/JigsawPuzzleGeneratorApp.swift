@@ -11,29 +11,6 @@ struct JigsawPuzzleGeneratorApp: App {
                 .frame(minWidth: 900, minHeight: 600)
         }
         .defaultSize(width: 1200, height: 800)
-        .commands {
-            CommandGroup(after: .newItem) {
-                OpenBatchCommand()
-            }
-        }
-
-        Window("Batch Process", id: "batch") {
-            BatchProcessingView()
-        }
-        .defaultSize(width: 700, height: 600)
-    }
-}
-
-/// Menu command view that opens the batch processing window.
-/// Wrapped in a View so it can access @Environment(\.openWindow).
-private struct OpenBatchCommand: View {
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Button("Batch Process...") {
-            openWindow(id: "batch")
-        }
-        .keyboardShortcut("b", modifiers: [.command, .shift])
     }
 }
 

@@ -1,85 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum BatchSource: String, CaseIterable, Hashable {
-    case local
-    case openverse
-}
-
-struct BatchProcessingView: View {
-    @StateObject private var batchState = BatchState()
-    @StateObject private var openverseState = OpenverseSearchState()
-    @State private var selectedSource: BatchSource = .local
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                // Sidebar
-                VStack(spacing: 4) {
-                    sidebarButton(label: "Local Images", icon: "folder", source: .local)
-                    sidebarButton(label: "Openverse", icon: "globe", source: .openverse)
-                    Spacer()
-                }
-                .padding(8)
-                .frame(width: 170)
-                .background(.ultraThinMaterial)
-
-                Divider()
-
-                // Detail
-                Group {
-                    if selectedSource == .local {
-                        LocalImagesPanel(batchState: batchState)
-                    } else {
-                        OpenversePanel(batchState: batchState, state: openverseState)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-
-            Divider()
-
-            // Settings panel
-            BatchSettingsPanel(configuration: $batchState.configuration)
-                .padding()
-                .disabled(batchState.isRunning)
-
-            Divider()
-
-            // Progress and controls
-            VStack(spacing: 12) {
-                if !batchState.items.isEmpty {
-                    BatchProgressBar(batchState: batchState)
-                }
-                BatchControls(batchState: batchState)
-            }
-            .padding()
-        }
-        .frame(minWidth: 600, minHeight: 500)
-    }
-
-    private func sidebarButton(label: String, icon: String, source: BatchSource) -> some View {
-        Button {
-            selectedSource = source
-        } label: {
-            Label(label, systemImage: icon)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 8)
-                .background(
-                    selectedSource == source
-                        ? Color.accentColor.opacity(0.2)
-                        : Color.clear
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Local Images Panel
 
-private struct LocalImagesPanel: View {
+struct LocalImagesPanel: View {
     @ObservedObject var batchState: BatchState
     @State private var isDragTargeted = false
 
@@ -180,7 +104,7 @@ private struct LocalImagesPanel: View {
 
 // MARK: - Item Row
 
-private struct BatchItemRow: View {
+struct BatchItemRow: View {
     @ObservedObject var item: BatchItem
 
     var body: some View {
@@ -247,7 +171,7 @@ private struct BatchItemRow: View {
 
 // MARK: - Settings Panel
 
-private struct BatchSettingsPanel: View {
+struct BatchSettingsPanel: View {
     @Binding var configuration: BatchConfiguration
 
     var body: some View {
@@ -356,7 +280,7 @@ private struct BatchSettingsPanel: View {
 
 // MARK: - Progress Bar
 
-private struct BatchProgressBar: View {
+struct BatchProgressBar: View {
     @ObservedObject var batchState: BatchState
 
     var body: some View {
@@ -379,7 +303,7 @@ private struct BatchProgressBar: View {
 
 // MARK: - Controls
 
-private struct BatchControls: View {
+struct BatchControls: View {
     @ObservedObject var batchState: BatchState
 
     var body: some View {

@@ -1,49 +1,66 @@
 import SwiftUI
 
+enum SidebarItem: Hashable {
+    case batchLocal
+    case batchOpenverse
+    case project(UUID)
+    case piece(UUID)
+}
+
 struct SidebarView: View {
     @EnvironmentObject var appState: AppState
+    @Binding var selection: SidebarItem?
 
     var body: some View {
-        List(selection: Binding(
-            get: { appState.selectedPieceID ?? appState.selectedProjectID },
-            set: { newValue in
-                handleSelection(newValue)
+        List(selection: $selection) {
+            Section("Batch Processing") {
+                Label("Local Images", systemImage: "folder")
+                    .tag(SidebarItem.batchLocal)
+                Label("Openverse", systemImage: "globe")
+                    .tag(SidebarItem.batchOpenverse)
             }
-        )) {
-            ForEach(appState.projects) { project in
-                ProjectRow(project: project)
-                    .contextMenu {
-                        Button("Remove") {
-                            appState.removeProject(project)
+
+            Section("Projects") {
+                ForEach(appState.projects) { project in
+                    ProjectRow(project: project)
+                        .contextMenu {
+                            Button("Remove") {
+                                appState.removeProject(project)
+                            }
                         }
-                    }
+                }
             }
         }
         .listStyle(.sidebar)
         .navigationTitle("Projects")
+        .onChange(of: selection) { _, newValue in
+            handleSelection(newValue)
+        }
     }
 
-    private func handleSelection(_ id: UUID?) {
-        guard let id = id else {
+    private func handleSelection(_ item: SidebarItem?) {
+        switch item {
+        case .batchLocal, .batchOpenverse:
             appState.selectedProjectID = nil
             appState.selectedPieceID = nil
-            return
-        }
 
-        // Check if the ID matches a project
-        if appState.projects.contains(where: { $0.id == id }) {
+        case .project(let id):
             appState.selectedProjectID = id
             appState.selectedPieceID = nil
-            return
-        }
 
-        // Check if the ID matches a piece in any project
-        for project in appState.projects {
-            if project.pieces.contains(where: { $0.id == id }) {
-                appState.selectedProjectID = project.id
-                appState.selectedPieceID = id
-                return
+        case .piece(let pieceID):
+            // Find the project that owns this piece
+            for project in appState.projects {
+                if project.pieces.contains(where: { $0.id == pieceID }) {
+                    appState.selectedProjectID = project.id
+                    appState.selectedPieceID = pieceID
+                    return
+                }
             }
+
+        case nil:
+            appState.selectedProjectID = nil
+            appState.selectedPieceID = nil
         }
     }
 }
@@ -61,7 +78,7 @@ private struct ProjectRow: View {
                         Text(piece.displayLabel)
                             .font(.callout)
                     }
-                    .tag(piece.id)
+                    .tag(SidebarItem.piece(piece.id))
                 }
             } else if project.isGenerating {
                 HStack(spacing: 8) {
@@ -96,7 +113,7 @@ private struct ProjectRow: View {
                     }
                 }
             }
-            .tag(project.id)
+            .tag(SidebarItem.project(project.id))
         }
     }
 
