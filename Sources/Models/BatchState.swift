@@ -31,7 +31,7 @@ class BatchItem: ObservableObject, Identifiable {
 
     @Published var status: BatchItemStatus = .pending
     /// Populated after successful generation.
-    var project: PuzzleProject?
+    var puzzleImage: PuzzleImage?
 
     init(name: String, sourceImage: NSImage, sourceImageURL: URL?, attribution: ImageAttribution? = nil) {
         self.name = name
@@ -143,7 +143,7 @@ class BatchState: ObservableObject {
         items.removeAll()
     }
 
-    func startBatch(appState: AppState) {
+    func startBatch(appState: AppState, project: PuzzleProject) {
         guard !isRunning else { return }
         isRunning = true
         isCancelled = false
@@ -151,8 +151,8 @@ class BatchState: ObservableObject {
         // Reset any previously finished items
         for item in items {
             if item.status.isFinished {
-                item.project?.cleanupOutputDirectory()
-                item.project = nil
+                item.puzzleImage?.cleanupOutputDirectory()
+                item.puzzleImage = nil
                 item.status = .pending
             }
         }
@@ -189,26 +189,32 @@ class BatchState: ObservableObject {
 
                 switch result {
                 case .success(let generation):
-                    let project = PuzzleProject(
+                    let puzzleImage = PuzzleImage(
                         name: item.name,
                         sourceImage: item.sourceImage,
                         sourceImageURL: item.sourceImageURL
                     )
-                    project.configuration = config
-                    project.attribution = item.attribution
-                    project.pieces = generation.pieces
-                    project.linesImage = generation.linesImage
-                    project.outputDirectory = generation.outputDirectory
-                    item.project = project
+                    puzzleImage.configuration = config
+                    puzzleImage.attribution = item.attribution
+                    puzzleImage.pieces = generation.pieces
+                    puzzleImage.linesImage = generation.linesImage
+                    puzzleImage.outputDirectory = generation.outputDirectory
+                    item.puzzleImage = puzzleImage
                     item.status = .completed(pieceCount: generation.actualPieceCount)
 
-                    // Add to main project list so it appears in sidebar
-                    appState.addProject(project)
+                    // Add to target project
+                    appState.addImage(puzzleImage, to: project)
+
+                    // Persist: copy source, move pieces, save
+                    ProjectStore.copySourceImage(puzzleImage, to: project)
+                    ProjectStore.moveGeneratedPieces(for: puzzleImage, in: project)
+                    ProjectStore.saveLinesOverlay(for: puzzleImage, in: project)
+                    appState.saveProject(project)
 
                     // Auto-export if enabled
                     if configuration.autoExport, let dir = configuration.exportDirectory {
                         do {
-                            try ExportService.export(project: project, to: dir)
+                            try ExportService.export(image: puzzleImage, to: dir)
                         } catch {
                             // Export failure doesn't change item status - generation succeeded
                         }
@@ -229,15 +235,15 @@ class BatchState: ObservableObject {
 
     func exportAll(to directory: URL) {
         for item in items {
-            guard case .completed = item.status, let project = item.project else { continue }
-            try? ExportService.export(project: project, to: directory)
+            guard case .completed = item.status, let puzzleImage = item.puzzleImage else { continue }
+            try? ExportService.export(image: puzzleImage, to: directory)
         }
     }
 
     func cleanup() {
         for item in items {
-            item.project?.cleanupOutputDirectory()
-            item.project = nil
+            item.puzzleImage?.cleanupOutputDirectory()
+            item.puzzleImage = nil
         }
     }
 

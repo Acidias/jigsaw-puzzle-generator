@@ -26,8 +26,8 @@ enum ExportError: Error, LocalizedError {
 enum ExportService {
 
     @MainActor
-    static func export(project: PuzzleProject, to directory: URL) throws {
-        let puzzleDir = directory.appendingPathComponent(project.name)
+    static func export(image: PuzzleImage, to directory: URL) throws {
+        let puzzleDir = directory.appendingPathComponent(image.name)
         let piecesDir = puzzleDir.appendingPathComponent("pieces")
 
         do {
@@ -37,7 +37,7 @@ enum ExportService {
         }
 
         // Export each piece as PNG - copy from disk when possible
-        for piece in project.pieces {
+        for piece in image.pieces {
             let filename = "piece_\(piece.pieceIndex).png"
             let destURL = piecesDir.appendingPathComponent(filename)
 
@@ -49,8 +49,8 @@ enum ExportService {
                 } catch {
                     throw ExportError.pieceCopyFailed(pieceIndex: piece.pieceIndex, reason: error.localizedDescription)
                 }
-            } else if let image = piece.image,
-                      let tiffData = image.tiffRepresentation,
+            } else if let pieceImage = piece.image,
+                      let tiffData = pieceImage.tiffRepresentation,
                       let bitmap = NSBitmapImageRep(data: tiffData),
                       let pngData = bitmap.representation(using: .png, properties: [:]) {
                 // Fallback: re-encode from NSImage
@@ -66,7 +66,7 @@ enum ExportService {
 
         // Export lines overlay if available (always re-encode since it's an NSImage).
         // Not critical - skip silently if encoding fails since pieces are the main output.
-        if let linesImage = project.linesImage,
+        if let linesImage = image.linesImage,
            let tiffData = linesImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {
@@ -75,7 +75,7 @@ enum ExportService {
         }
 
         // Generate metadata JSON
-        let metadata = buildMetadata(project: project)
+        let metadata = buildMetadata(image: image)
         do {
             let jsonData = try JSONEncoder().encode(metadata)
             let metadataURL = puzzleDir.appendingPathComponent("metadata.json")
@@ -93,8 +93,8 @@ enum ExportService {
     }
 
     @MainActor
-    private static func buildMetadata(project: PuzzleProject) -> PuzzleMetadata {
-        let pieces = project.pieces.map { piece in
+    private static func buildMetadata(image: PuzzleImage) -> PuzzleMetadata {
+        let pieces = image.pieces.map { piece in
             PieceMetadata(
                 id: piece.pieceIndex,
                 type: piece.pieceType.rawValue,
@@ -108,13 +108,13 @@ enum ExportService {
         }
 
         return PuzzleMetadata(
-            sourceName: project.name,
-            sourceWidth: project.imageWidth,
-            sourceHeight: project.imageHeight,
-            requestedPieces: project.configuration.totalPieces,
-            actualPieces: project.pieces.count,
+            sourceName: image.name,
+            sourceWidth: image.imageWidth,
+            sourceHeight: image.imageHeight,
+            requestedPieces: image.configuration.totalPieces,
+            actualPieces: image.pieces.count,
             pieces: pieces,
-            attribution: project.attribution
+            attribution: image.attribution
         )
     }
 }

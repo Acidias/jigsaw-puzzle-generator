@@ -1,24 +1,24 @@
 import SwiftUI
 
 struct ImageDetailView: View {
-    @ObservedObject var project: PuzzleProject
+    @ObservedObject var image: PuzzleImage
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 // Image preview with puzzle overlay
                 ZStack {
-                    Image(nsImage: project.sourceImage)
+                    Image(nsImage: image.sourceImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .overlay {
-                            if project.hasGeneratedPieces {
-                                PuzzleOverlayView(project: project)
+                            if image.hasGeneratedPieces {
+                                PuzzleOverlayView(image: image)
                             }
                         }
 
                     // Generation overlay with progress
-                    if project.isGenerating {
+                    if image.isGenerating {
                         ZStack {
                             Color.black.opacity(0.4)
                             VStack(spacing: 12) {
@@ -28,11 +28,11 @@ struct ImageDetailView: View {
                                 Text("Generating puzzle...")
                                     .font(.headline)
                                     .foregroundStyle(.white)
-                                ProgressView(value: project.progress)
+                                ProgressView(value: image.progress)
                                     .progressViewStyle(.linear)
                                     .tint(.white)
                                     .frame(width: 200)
-                                Text("\(Int(project.progress * 100))%")
+                                Text("\(Int(image.progress * 100))%")
                                     .font(.caption)
                                     .foregroundStyle(.white.opacity(0.8))
                             }
@@ -46,12 +46,12 @@ struct ImageDetailView: View {
 
                 // Image info
                 HStack(spacing: 24) {
-                    Label("\(project.imageWidth) x \(project.imageHeight) px", systemImage: "ruler")
-                    if let url = project.sourceImageURL {
+                    Label("\(image.imageWidth) x \(image.imageHeight) px", systemImage: "ruler")
+                    if let url = image.sourceImageURL {
                         Label(url.lastPathComponent, systemImage: "doc")
                     }
-                    if project.hasGeneratedPieces {
-                        Label("\(project.pieces.count) pieces", systemImage: "puzzlepiece")
+                    if image.hasGeneratedPieces {
+                        Label("\(image.pieces.count) pieces", systemImage: "puzzlepiece")
                     }
                 }
                 .font(.callout)
@@ -60,13 +60,13 @@ struct ImageDetailView: View {
                 Divider()
 
                 // Configuration panel
-                ConfigurationPanel(project: project)
+                ConfigurationPanel(image: image)
                     .padding(.horizontal)
 
                 Spacer(minLength: 20)
             }
             .padding(.vertical)
         }
-        .navigationTitle(project.name)
+        .navigationTitle(image.name)
     }
 }

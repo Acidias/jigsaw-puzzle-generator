@@ -10,6 +10,8 @@ struct ContentView: View {
     @State private var isDragTargeted = false
     @State private var errorMessage: String?
     @State private var showErrorAlert = false
+    @State private var showNewProjectAlert = false
+    @State private var newProjectName = ""
 
     private var isBatchSelected: Bool {
         if case .batchLocal = sidebarSelection { return true }
@@ -58,13 +60,21 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
+                    showNewProjectAlert = true
+                    newProjectName = ""
+                } label: {
+                    Label("New Project", systemImage: "folder.badge.plus")
+                }
+                .keyboardShortcut("n", modifiers: .command)
+
+                Button {
                     importImage()
                 } label: {
                     Label("Import Image", systemImage: "photo.badge.plus")
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
-                if let project = appState.selectedProject, project.hasGeneratedPieces {
+                if let image = appState.selectedImage, image.hasGeneratedPieces {
                     Button {
                         exportAll()
                     } label: {
@@ -92,18 +102,46 @@ struct ContentView: View {
         } message: {
             Text(errorMessage ?? "An unknown error occurred.")
         }
-        // Sync: when a project is added/selected via AppState, update sidebar selection
+        .alert("New Project", isPresented: $showNewProjectAlert) {
+            TextField("Project name", text: $newProjectName)
+            Button("Create") {
+                let name = newProjectName.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return }
+                let project = PuzzleProject(name: name)
+                appState.addProject(project)
+                appState.saveProject(project)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enter a name for the new project.")
+        }
+        // Sync: when a project/image is selected via AppState, update sidebar selection
         .onChange(of: appState.selectedProjectID) { _, newID in
             guard let id = newID else { return }
             if let pieceID = appState.selectedPieceID {
                 sidebarSelection = .piece(pieceID)
+            } else if let imageID = appState.selectedImageID {
+                sidebarSelection = .image(imageID)
             } else {
                 sidebarSelection = .project(id)
+            }
+        }
+        .onChange(of: appState.selectedImageID) { _, newID in
+            if let id = newID {
+                if let pieceID = appState.selectedPieceID {
+                    sidebarSelection = .piece(pieceID)
+                } else {
+                    sidebarSelection = .image(id)
+                }
+            } else if let projectID = appState.selectedProjectID {
+                sidebarSelection = .project(projectID)
             }
         }
         .onChange(of: appState.selectedPieceID) { _, newID in
             if let id = newID {
                 sidebarSelection = .piece(id)
+            } else if let imageID = appState.selectedImageID {
+                sidebarSelection = .image(imageID)
             } else if let projectID = appState.selectedProjectID {
                 sidebarSelection = .project(projectID)
             }
@@ -112,12 +150,14 @@ struct ContentView: View {
 
     @ViewBuilder
     private var projectDetailView: some View {
-        if let project = appState.selectedProject {
+        if let image = appState.selectedImage {
             if let piece = appState.selectedPiece {
-                PieceDetailView(project: project, piece: piece)
+                PieceDetailView(image: image, piece: piece)
             } else {
-                ImageDetailView(project: project)
+                ImageDetailView(image: image)
             }
+        } else if let project = appState.selectedProject {
+            ProjectDetailView(project: project)
         } else {
             WelcomeView()
         }
@@ -126,6 +166,16 @@ struct ContentView: View {
     private func showError(_ message: String) {
         errorMessage = message
         showErrorAlert = true
+    }
+
+    /// Ensures a project is available for the import. Creates one if needed.
+    private func ensureProject() -> PuzzleProject {
+        if let project = appState.selectedProject {
+            return project
+        }
+        let project = PuzzleProject(name: "Imported Images")
+        appState.addProject(project)
+        return project
     }
 
     private func importImage() {
@@ -140,13 +190,17 @@ struct ContentView: View {
     }
 
     private func loadImage(from url: URL) {
-        guard let image = NSImage(contentsOf: url) else {
+        guard let nsImage = NSImage(contentsOf: url) else {
             showError("Could not open \"\(url.lastPathComponent)\". The file may be corrupted or in an unsupported format.")
             return
         }
         let name = url.deletingPathExtension().lastPathComponent
-        let project = PuzzleProject(name: name, sourceImage: image, sourceImageURL: url)
-        appState.addProject(project)
+        let image = PuzzleImage(name: name, sourceImage: nsImage, sourceImageURL: url)
+        let project = ensureProject()
+        appState.addImage(image, to: project)
+        // Persist: copy source image and save manifest
+        ProjectStore.copySourceImage(image, to: project)
+        appState.saveProject(project)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -185,15 +239,17 @@ struct ContentView: View {
                         }
                         return
                     }
-                    guard let data = data, let image = NSImage(data: data) else {
+                    guard let data = data, let nsImage = NSImage(data: data) else {
                         Task { @MainActor in
                             showError("The dropped image could not be decoded. It may be in an unsupported format.")
                         }
                         return
                     }
                     Task { @MainActor in
-                        let project = PuzzleProject(name: "Dropped Image", sourceImage: image)
-                        appState.addProject(project)
+                        let image = PuzzleImage(name: "Dropped Image", sourceImage: nsImage)
+                        let project = ensureProject()
+                        appState.addImage(image, to: project)
+                        appState.saveProject(project)
                     }
                 }
                 return true
@@ -203,7 +259,7 @@ struct ContentView: View {
     }
 
     private func exportAll() {
-        guard let project = appState.selectedProject, project.hasGeneratedPieces else { return }
+        guard let image = appState.selectedImage, image.hasGeneratedPieces else { return }
 
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -214,10 +270,42 @@ struct ContentView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            try ExportService.export(project: project, to: url)
+            try ExportService.export(image: image, to: url)
         } catch {
             showError(error.localizedDescription)
         }
+    }
+}
+
+/// Shows when a project is selected but no image is selected within it.
+struct ProjectDetailView: View {
+    @ObservedObject var project: PuzzleProject
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.blue.opacity(0.5))
+            Text(project.name)
+                .font(.largeTitle)
+                .fontWeight(.semibold)
+            if project.images.isEmpty {
+                Text("This project has no images yet")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Text("Import an image with Cmd+O or drag and drop")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text("\(project.images.count) image\(project.images.count == 1 ? "" : "s")")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Text("Select an image from the sidebar to view it")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -230,10 +318,10 @@ struct WelcomeView: View {
             Text("Jigsaw Puzzle Generator")
                 .font(.largeTitle)
                 .fontWeight(.semibold)
-            Text("Import an image to get started")
+            Text("Create a project or import an image to get started")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            Text("Drag and drop an image, or press Cmd+O to open")
+            Text("Press Cmd+N to create a project, or Cmd+O to import an image")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }

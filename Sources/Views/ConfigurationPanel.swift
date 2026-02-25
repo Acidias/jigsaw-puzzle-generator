@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ConfigurationPanel: View {
-    @ObservedObject var project: PuzzleProject
+    @ObservedObject var image: PuzzleImage
     @EnvironmentObject var appState: AppState
 
     @State private var showErrorAlert = false
@@ -12,21 +12,21 @@ struct ConfigurationPanel: View {
                 // Grid size controls
                 HStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Columns: \(project.configuration.columns)")
+                        Text("Columns: \(image.configuration.columns)")
                             .font(.callout)
                             .fontWeight(.medium)
                         HStack {
                             Slider(
                                 value: Binding(
-                                    get: { Double(project.configuration.columns) },
-                                    set: { project.configuration.columns = Int($0) }
+                                    get: { Double(image.configuration.columns) },
+                                    set: { image.configuration.columns = Int($0) }
                                 ),
                                 in: 1...100,
                                 step: 1
                             )
                             Stepper(
                                 "",
-                                value: $project.configuration.columns,
+                                value: $image.configuration.columns,
                                 in: 1...100
                             )
                             .labelsHidden()
@@ -34,21 +34,21 @@ struct ConfigurationPanel: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Rows: \(project.configuration.rows)")
+                        Text("Rows: \(image.configuration.rows)")
                             .font(.callout)
                             .fontWeight(.medium)
                         HStack {
                             Slider(
                                 value: Binding(
-                                    get: { Double(project.configuration.rows) },
-                                    set: { project.configuration.rows = Int($0) }
+                                    get: { Double(image.configuration.rows) },
+                                    set: { image.configuration.rows = Int($0) }
                                 ),
                                 in: 1...100,
                                 step: 1
                             )
                             Stepper(
                                 "",
-                                value: $project.configuration.rows,
+                                value: $image.configuration.rows,
                                 in: 1...100
                             )
                             .labelsHidden()
@@ -59,12 +59,12 @@ struct ConfigurationPanel: View {
                 // Summary and generate button
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        if project.hasGeneratedPieces {
-                            Text("\(project.pieces.count) pieces generated")
+                        if image.hasGeneratedPieces {
+                            Text("\(image.pieces.count) pieces generated")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         } else {
-                            Text("\(project.configuration.totalPieces) pieces")
+                            Text("\(image.configuration.totalPieces) pieces")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -79,7 +79,7 @@ struct ConfigurationPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .disabled(project.isGenerating)
+                    .disabled(image.isGenerating)
                 }
             }
             .padding(8)
@@ -87,51 +87,58 @@ struct ConfigurationPanel: View {
         .alert("Generation Failed", isPresented: $showErrorAlert) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(project.lastError ?? "An unknown error occurred.")
+            Text(image.lastError ?? "An unknown error occurred.")
         }
     }
 
     private func generatePuzzle() {
-        guard !project.isGenerating else { return }
+        guard !image.isGenerating else { return }
 
         Task {
-            project.isGenerating = true
-            project.progress = 0.0
-            project.pieces = []
-            project.linesImage = nil
-            project.lastError = nil
+            image.isGenerating = true
+            image.progress = 0.0
+            image.pieces = []
+            image.linesImage = nil
+            image.lastError = nil
             appState.selectedPieceID = nil
 
             // Clean up previous output directory before generating
-            project.cleanupOutputDirectory()
+            image.cleanupOutputDirectory()
 
-            var config = project.configuration
+            var config = image.configuration
             config.validate()
-            project.configuration = config
+            image.configuration = config
 
             let generator = PuzzleGenerator()
             let result = await generator.generate(
-                image: project.sourceImage,
-                imageURL: project.sourceImageURL,
+                image: image.sourceImage,
+                imageURL: image.sourceImageURL,
                 configuration: config,
                 onProgress: { progress in
                     Task { @MainActor in
-                        project.progress = progress
+                        image.progress = progress
                     }
                 }
             )
 
             switch result {
             case .success(let generation):
-                project.pieces = generation.pieces
-                project.linesImage = generation.linesImage
-                project.outputDirectory = generation.outputDirectory
+                image.pieces = generation.pieces
+                image.linesImage = generation.linesImage
+                image.outputDirectory = generation.outputDirectory
+
+                // Persist generated pieces and save project
+                if let project = appState.projectForImage(id: image.id) {
+                    ProjectStore.moveGeneratedPieces(for: image, in: project)
+                    ProjectStore.saveLinesOverlay(for: image, in: project)
+                    appState.saveProject(project)
+                }
             case .failure(let error):
-                project.lastError = error.errorDescription
+                image.lastError = error.errorDescription
                 showErrorAlert = true
             }
-            project.isGenerating = false
-            project.progress = 1.0
+            image.isGenerating = false
+            image.progress = 1.0
         }
     }
 }

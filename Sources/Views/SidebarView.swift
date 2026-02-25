@@ -4,6 +4,7 @@ enum SidebarItem: Hashable {
     case batchLocal
     case batchOpenverse
     case project(UUID)
+    case image(UUID)
     case piece(UUID)
 }
 
@@ -24,6 +25,10 @@ struct SidebarView: View {
                 ForEach(appState.projects) { project in
                     ProjectRow(project: project)
                         .contextMenu {
+                            Button("Rename...") {
+                                promptRenameProject(project)
+                            }
+                            Divider()
                             Button("Remove") {
                                 appState.removeProject(project)
                             }
@@ -42,37 +47,110 @@ struct SidebarView: View {
         switch item {
         case .batchLocal, .batchOpenverse:
             appState.selectedProjectID = nil
+            appState.selectedImageID = nil
             appState.selectedPieceID = nil
 
         case .project(let id):
             appState.selectedProjectID = id
+            appState.selectedImageID = nil
             appState.selectedPieceID = nil
 
+        case .image(let imageID):
+            // Find the project that owns this image
+            if let project = appState.projectForImage(id: imageID) {
+                appState.selectedProjectID = project.id
+                appState.selectedImageID = imageID
+                appState.selectedPieceID = nil
+            }
+
         case .piece(let pieceID):
-            // Find the project that owns this piece
-            for project in appState.projects {
-                if project.pieces.contains(where: { $0.id == pieceID }) {
-                    appState.selectedProjectID = project.id
-                    appState.selectedPieceID = pieceID
-                    return
-                }
+            // Find the image and project that own this piece
+            if let result = appState.imageForPiece(id: pieceID) {
+                appState.selectedProjectID = result.project.id
+                appState.selectedImageID = result.image.id
+                appState.selectedPieceID = pieceID
             }
 
         case nil:
             appState.selectedProjectID = nil
+            appState.selectedImageID = nil
             appState.selectedPieceID = nil
+        }
+    }
+
+    private func promptRenameProject(_ project: PuzzleProject) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Project"
+        alert.informativeText = "Enter a new name for the project."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        textField.stringValue = project.name
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                project.name = newName
+                appState.saveProject(project)
+            }
         }
     }
 }
 
-/// Extracted sub-view so SwiftUI properly observes @Published changes on the project.
+/// Three-level project row: Project > Images > Pieces.
 private struct ProjectRow: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject var project: PuzzleProject
 
     var body: some View {
         DisclosureGroup {
-            if project.hasGeneratedPieces {
-                ForEach(project.pieces) { piece in
+            if project.images.isEmpty {
+                Text("No images yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                ForEach(project.images) { image in
+                    ImageRow(image: image)
+                        .contextMenu {
+                            Button("Remove") {
+                                appState.removeImage(image, from: project)
+                                appState.saveProject(project)
+                            }
+                        }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name)
+                        .fontWeight(.medium)
+                    let imageCount = project.images.count
+                    let pieceCount = project.images.reduce(0) { $0 + $1.pieces.count }
+                    if imageCount > 0 {
+                        Text("\(imageCount) image\(imageCount == 1 ? "" : "s"), \(pieceCount) pieces")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .tag(SidebarItem.project(project.id))
+        }
+    }
+}
+
+/// Image row within a project, showing pieces underneath.
+private struct ImageRow: View {
+    @ObservedObject var image: PuzzleImage
+
+    var body: some View {
+        DisclosureGroup {
+            if image.hasGeneratedPieces {
+                ForEach(image.pieces) { piece in
                     HStack(spacing: 8) {
                         pieceTypeIcon(piece.pieceType)
                         Text(piece.displayLabel)
@@ -80,7 +158,7 @@ private struct ProjectRow: View {
                     }
                     .tag(SidebarItem.piece(piece.id))
                 }
-            } else if project.isGenerating {
+            } else if image.isGenerating {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
@@ -98,22 +176,22 @@ private struct ProjectRow: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "photo")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.teal)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(project.name)
+                    Text(image.name)
                         .fontWeight(.medium)
-                    if project.hasGeneratedPieces {
-                        Text("\(project.pieces.count) pieces")
+                    if image.hasGeneratedPieces {
+                        Text("\(image.pieces.count) pieces")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                    } else if project.isGenerating {
-                        Text("Generating... \(Int(project.progress * 100))%")
+                    } else if image.isGenerating {
+                        Text("Generating... \(Int(image.progress * 100))%")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            .tag(SidebarItem.project(project.id))
+            .tag(SidebarItem.image(image.id))
         }
     }
 

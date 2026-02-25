@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PieceDetailView: View {
-    @ObservedObject var project: PuzzleProject
+    @ObservedObject var image: PuzzleImage
     let piece: PuzzlePiece
 
     @State private var exportError: String?
@@ -11,8 +11,8 @@ struct PieceDetailView: View {
         ScrollView {
             VStack(spacing: 20) {
                 // Piece image
-                if let image = piece.image {
-                    Image(nsImage: image)
+                if let pieceImage = piece.image {
+                    Image(nsImage: pieceImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: 400, maxHeight: 400)
@@ -105,8 +105,8 @@ struct PieceDetailView: View {
             }
 
             // Fallback: re-encode from NSImage
-            guard let image = piece.image,
-                  let tiffData = image.tiffRepresentation,
+            guard let pieceImage = piece.image,
+                  let tiffData = pieceImage.tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiffData),
                   let pngData = bitmap.representation(using: .png, properties: [:]) else {
                 exportError = "The piece image is unavailable. The source file may have been deleted."

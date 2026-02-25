@@ -62,7 +62,7 @@ struct LocalImagesPanel: View {
             .onDelete { offsets in
                 guard !batchState.isRunning else { return }
                 for index in offsets {
-                    batchState.items[index].project?.cleanupOutputDirectory()
+                    batchState.items[index].puzzleImage?.cleanupOutputDirectory()
                 }
                 batchState.items.remove(atOffsets: offsets)
             }
@@ -307,6 +307,9 @@ struct BatchControls: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var batchState: BatchState
 
+    @State private var showProjectPicker = false
+    @State private var newProjectName = ""
+
     var body: some View {
         HStack {
             if !batchState.items.isEmpty {
@@ -354,17 +357,46 @@ struct BatchControls: View {
                 .buttonStyle(.bordered)
             } else {
                 Button("Start Batch") {
-                    // Validate auto-export directory if enabled
-                    if batchState.configuration.autoExport && batchState.configuration.exportDirectory == nil {
-                        chooseExportDirectoryThenStart()
-                        return
-                    }
-                    batchState.startBatch(appState: appState)
+                    startBatch()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(batchState.items.isEmpty)
             }
         }
+        .alert("Batch Target Project", isPresented: $showProjectPicker) {
+            TextField("New project name", text: $newProjectName)
+            Button("Create and Start") {
+                let name = newProjectName.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return }
+                let project = PuzzleProject(name: name)
+                appState.addProject(project)
+                appState.saveProject(project)
+                startBatchWithProject(project)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Create a new project to hold the batch results, or select an existing project first.")
+        }
+    }
+
+    private func startBatch() {
+        // Validate auto-export directory if enabled
+        if batchState.configuration.autoExport && batchState.configuration.exportDirectory == nil {
+            chooseExportDirectoryThenStart()
+            return
+        }
+
+        // Use currently selected project, or prompt to create one
+        if let project = appState.selectedProject {
+            startBatchWithProject(project)
+        } else {
+            newProjectName = "Batch \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+            showProjectPicker = true
+        }
+    }
+
+    private func startBatchWithProject(_ project: PuzzleProject) {
+        batchState.startBatch(appState: appState, project: project)
     }
 
     private func exportAll() {
@@ -387,6 +419,6 @@ struct BatchControls: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         batchState.configuration.exportDirectory = url
-        batchState.startBatch(appState: appState)
+        startBatch()
     }
 }

@@ -1,57 +1,17 @@
-import AppKit
-import Combine
 import Foundation
 
-/// Represents a single puzzle project - one source image and its generated pieces.
+/// A project is a named container grouping multiple images and their generated puzzles.
 @MainActor
 class PuzzleProject: ObservableObject, Identifiable {
     let id: UUID
-    var name: String
-    var sourceImage: NSImage
-    var sourceImageURL: URL?
+    @Published var name: String
+    @Published var images: [PuzzleImage] = []
+    let createdAt: Date
 
-    @Published var configuration: PuzzleConfiguration
-    @Published var pieces: [PuzzlePiece] = []
-    @Published var isGenerating: Bool = false
-    @Published var progress: Double = 0.0
-    /// The puzzle cut lines overlay image.
-    @Published var linesImage: NSImage?
-    /// Last generation error message, shown to the user.
-    @Published var lastError: String?
-    /// Path to the output directory for this generation.
-    var outputDirectory: URL?
-    /// Attribution and licence info (non-nil for Openverse images).
-    var attribution: ImageAttribution?
-
-    /// Image dimensions in pixels (not points) for accurate metadata.
-    var imageWidth: Int {
-        guard let rep = sourceImage.representations.first else {
-            return Int(sourceImage.size.width)
-        }
-        return rep.pixelsWide > 0 ? rep.pixelsWide : Int(sourceImage.size.width)
-    }
-    var imageHeight: Int {
-        guard let rep = sourceImage.representations.first else {
-            return Int(sourceImage.size.height)
-        }
-        return rep.pixelsHigh > 0 ? rep.pixelsHigh : Int(sourceImage.size.height)
-    }
-
-    init(name: String, sourceImage: NSImage, sourceImageURL: URL? = nil) {
-        self.id = UUID()
+    init(id: UUID = UUID(), name: String, createdAt: Date = Date()) {
+        self.id = id
         self.name = name
-        self.sourceImage = sourceImage
-        self.sourceImageURL = sourceImageURL
-        self.configuration = PuzzleConfiguration()
-    }
-
-    var hasGeneratedPieces: Bool { !pieces.isEmpty }
-
-    /// Removes the output directory from disk.
-    func cleanupOutputDirectory() {
-        guard let dir = outputDirectory else { return }
-        try? FileManager.default.removeItem(at: dir)
-        outputDirectory = nil
+        self.createdAt = createdAt
     }
 }
 
