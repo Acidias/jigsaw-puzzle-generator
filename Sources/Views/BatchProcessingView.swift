@@ -7,31 +7,32 @@ struct BatchProcessingView: View {
     @State private var showOpenverseSheet = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Image list
-            BatchImageList(batchState: batchState, isDragTargeted: $isDragTargeted)
+        if showOpenverseSheet {
+            OpenverseSearchSheet(batchState: batchState, isPresented: $showOpenverseSheet)
+        } else {
+            VStack(spacing: 0) {
+                // Image list
+                BatchImageList(batchState: batchState, isDragTargeted: $isDragTargeted)
 
-            Divider()
+                Divider()
 
-            // Settings panel
-            BatchSettingsPanel(configuration: $batchState.configuration)
-                .padding()
-                .disabled(batchState.isRunning)
+                // Settings panel
+                BatchSettingsPanel(configuration: $batchState.configuration)
+                    .padding()
+                    .disabled(batchState.isRunning)
 
-            Divider()
+                Divider()
 
-            // Progress and controls
-            VStack(spacing: 12) {
-                if !batchState.items.isEmpty {
-                    BatchProgressBar(batchState: batchState)
+                // Progress and controls
+                VStack(spacing: 12) {
+                    if !batchState.items.isEmpty {
+                        BatchProgressBar(batchState: batchState)
+                    }
+                    BatchControls(batchState: batchState, showOpenverseSheet: $showOpenverseSheet)
                 }
-                BatchControls(batchState: batchState, showOpenverseSheet: $showOpenverseSheet)
+                .padding()
             }
-            .padding()
-        }
-        .frame(minWidth: 600, minHeight: 500)
-        .sheet(isPresented: $showOpenverseSheet) {
-            OpenverseSearchSheet(batchState: batchState)
+            .frame(minWidth: 600, minHeight: 500)
         }
     }
 }
