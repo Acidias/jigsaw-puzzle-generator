@@ -134,6 +134,9 @@ struct OpenversePanel: View {
     @State private var pickerProjectID: UUID?
     @State private var pickerNewName = ""
     @State private var pickerMode: ProjectPickerMode = .existing
+    @State private var showSettings = false
+    @State private var clientID = OpenverseCredentials.clientID
+    @State private var clientSecret = OpenverseCredentials.clientSecret
 
     fileprivate enum ProjectPickerMode {
         case existing
@@ -201,6 +204,59 @@ struct OpenversePanel: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
+
+            // API credentials settings
+            DisclosureGroup(isExpanded: $showSettings) {
+                HStack(spacing: 12) {
+                    HStack(spacing: 6) {
+                        Text("Client ID:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        SecureField("", text: $clientID)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 200)
+                            .onChange(of: clientID) { _, newValue in
+                                OpenverseCredentials.clientID = newValue
+                                OpenverseAPI.clearTokenCache()
+                            }
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("Client Secret:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        SecureField("", text: $clientSecret)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 200)
+                            .onChange(of: clientSecret) { _, newValue in
+                                OpenverseCredentials.clientSecret = newValue
+                                OpenverseAPI.clearTokenCache()
+                            }
+                    }
+
+                    if OpenverseCredentials.hasCredentials {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .help("API credentials configured")
+                    }
+
+                    Spacer()
+                }
+                .padding(.top, 4)
+            } label: {
+                HStack(spacing: 6) {
+                    Text("API Settings")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !OpenverseCredentials.hasCredentials {
+                        Text("(anonymous - limited)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 4)
 
             Divider()
 

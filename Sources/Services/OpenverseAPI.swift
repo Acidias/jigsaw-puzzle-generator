@@ -122,7 +122,7 @@ enum OpenverseError: Error, LocalizedError {
             return "Invalid response from Openverse."
         case .httpError(let code):
             if code == 429 {
-                return "Openverse rate limit reached. Anonymous usage allows 100 requests per day and 5 per hour. Please wait before searching again."
+                return "Openverse rate limit reached. Anonymous usage allows 100 requests per day and 5 per hour. Add API credentials in the settings to increase limits."
             }
             return "Openverse returned HTTP \(code)."
         case .invalidURL(let url):
@@ -133,11 +133,88 @@ enum OpenverseError: Error, LocalizedError {
     }
 }
 
+// MARK: - API Credentials
+
+/// Persistent storage for Openverse OAuth2 client credentials.
+enum OpenverseCredentials {
+    private static let clientIDKey = "OpenverseClientID"
+    private static let clientSecretKey = "OpenverseClientSecret"
+
+    static var clientID: String {
+        get { UserDefaults.standard.string(forKey: clientIDKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: clientIDKey) }
+    }
+
+    static var clientSecret: String {
+        get { UserDefaults.standard.string(forKey: clientSecretKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: clientSecretKey) }
+    }
+
+    static var hasCredentials: Bool {
+        !clientID.trimmingCharacters(in: .whitespaces).isEmpty
+            && !clientSecret.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+}
+
 // MARK: - API Client
 
 /// Openverse image search API client. No instances needed.
 enum OpenverseAPI {
     private static let baseURL = "https://api.openverse.org/v1/images/"
+    private static let tokenURL = "https://api.openverse.org/v1/auth_tokens/token/"
+
+    /// Cached bearer token and its expiry time.
+    private static var cachedToken: String?
+    private static var tokenExpiry: Date?
+
+    /// Fetch an OAuth2 bearer token using client credentials grant.
+    /// Caches the token and returns it. Returns nil if no credentials are configured.
+    private static func fetchToken() async throws -> String? {
+        guard OpenverseCredentials.hasCredentials else { return nil }
+
+        // Return cached token if still valid (with 60s buffer)
+        if let token = cachedToken, let expiry = tokenExpiry, Date() < expiry.addingTimeInterval(-60) {
+            return token
+        }
+
+        guard let url = URL(string: tokenURL) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("JigsawPuzzleGenerator/1.0", forHTTPHeaderField: "User-Agent")
+
+        let body = "client_id=\(OpenverseCredentials.clientID)&client_secret=\(OpenverseCredentials.clientSecret)&grant_type=client_credentials"
+        request.httpBody = body.data(using: .utf8)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            // Fall back to anonymous if token fetch fails
+            cachedToken = nil
+            tokenExpiry = nil
+            return nil
+        }
+
+        struct TokenResponse: Codable {
+            let accessToken: String
+            let expiresIn: Int
+            enum CodingKeys: String, CodingKey {
+                case accessToken = "access_token"
+                case expiresIn = "expires_in"
+            }
+        }
+
+        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+        cachedToken = tokenResponse.accessToken
+        tokenExpiry = Date().addingTimeInterval(Double(tokenResponse.expiresIn))
+        return tokenResponse.accessToken
+    }
+
+    /// Clear the cached token (call when credentials change).
+    static func clearTokenCache() {
+        cachedToken = nil
+        tokenExpiry = nil
+    }
 
     /// Search Openverse for images matching the given parameters.
     static func search(params: OpenverseSearchParams) async throws -> OpenverseSearchResponse {
@@ -161,6 +238,11 @@ enum OpenverseAPI {
 
         var request = URLRequest(url: components.url!)
         request.setValue("JigsawPuzzleGenerator/1.0", forHTTPHeaderField: "User-Agent")
+
+        // Add bearer token if credentials are configured
+        if let token = try await fetchToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
