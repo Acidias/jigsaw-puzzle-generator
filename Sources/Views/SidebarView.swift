@@ -25,15 +25,6 @@ struct SidebarView: View {
             Section("Projects") {
                 ForEach(appState.projects) { project in
                     ProjectRow(project: project)
-                        .contextMenu {
-                            Button("Rename...") {
-                                promptRenameProject(project)
-                            }
-                            Divider()
-                            Button("Remove") {
-                                appState.removeProject(project)
-                            }
-                        }
                 }
             }
         }
@@ -90,25 +81,6 @@ struct SidebarView: View {
         }
     }
 
-    private func promptRenameProject(_ project: PuzzleProject) {
-        let alert = NSAlert()
-        alert.messageText = "Rename Project"
-        alert.informativeText = "Enter a new name for the project."
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
-        textField.stringValue = project.name
-        alert.accessoryView = textField
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
-            if !newName.isEmpty {
-                project.name = newName
-                appState.saveProject(project)
-            }
-        }
-    }
 }
 
 /// Project row: Project > Cuts > CutImageResults > Pieces.
@@ -156,6 +128,35 @@ private struct ProjectRow: View {
                 }
             }
             .tag(SidebarItem.project(project.id))
+            .contextMenu {
+                Button("Rename...") {
+                    promptRenameProject(project)
+                }
+                Divider()
+                Button("Remove") {
+                    appState.removeProject(project)
+                }
+            }
+        }
+    }
+
+    private func promptRenameProject(_ project: PuzzleProject) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Project"
+        alert.informativeText = "Enter a new name for the project."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        textField.stringValue = project.name
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                project.name = newName
+                appState.saveProject(project)
+            }
         }
     }
 }
