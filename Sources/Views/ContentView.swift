@@ -18,9 +18,10 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        HSplitView {
             SidebarView(selection: $sidebarSelection)
-        } detail: {
+                .frame(minWidth: 180, maxWidth: 250)
+
             VStack(spacing: 0) {
                 // Detail content
                 Group {
@@ -108,22 +109,6 @@ struct ContentView: View {
                 sidebarSelection = .project(projectID)
             }
         }
-        .onChange(of: sidebarSelection) { _, newValue in
-            guard let newValue else { return }
-            switch newValue {
-            case .batchLocal, .batchOpenverse:
-                activateWindowForBatchInput()
-            default:
-                break
-            }
-        }
-    }
-
-    private func activateWindowForBatchInput() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
-        // Clear any stale first responder from the sidebar so text fields can take focus reliably.
-        NSApp.keyWindow?.makeFirstResponder(nil)
     }
 
     @ViewBuilder
