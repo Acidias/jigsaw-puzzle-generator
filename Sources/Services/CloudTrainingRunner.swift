@@ -257,7 +257,7 @@ enum CloudTrainingRunner {
                     executable: "/bin/sh",
                     arguments: ["-c", tarPipeline],
                     workingDirectory: nil,
-                    environment: ["COPYFILE_DISABLE": "1"],
+                    environment: [:],
                     onStdoutLine: { _ in },
                     onStderrLine: { _ in }
                 )
@@ -333,14 +333,15 @@ enum CloudTrainingRunner {
         // 2. Otherwise, install torch+torchvision from PyTorch CUDA index (--index-url
         //    replaces PyPI so pip can't prefer a newer CPU-only version), then other deps
         // --root-user-action=ignore suppresses the venv warning when running as root
+        let pipFlags = "--root-user-action=ignore --break-system-packages"
         let pipCommand = """
             if python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then \
                 echo "CUDA PyTorch already available"; \
-                pip install --root-user-action=ignore pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
+                pip install \(pipFlags) pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
             else \
                 echo "Installing CUDA PyTorch..."; \
-                pip install --root-user-action=ignore torch torchvision --index-url https://download.pytorch.org/whl/cu124; \
-                pip install --root-user-action=ignore pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
+                pip install \(pipFlags) torch torchvision --index-url https://download.pytorch.org/whl/cu124; \
+                pip install \(pipFlags) pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
             fi
             """
         let remoteCommand = "cd \(remoteDir) && \(pipCommand) && PYTHONUNBUFFERED=1 python train.py"
