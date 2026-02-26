@@ -111,7 +111,7 @@ struct SidebarView: View {
                     .fontWeight(.semibold)
                     .tag(SidebarItem.modelTraining)
 
-                ForEach(modelState.models) { model in
+                ForEach(modelState.models.sorted { $0.createdAt > $1.createdAt }) { model in
                     HStack(spacing: 6) {
                         Image(systemName: modelStatusIcon(model.status))
                             .font(.caption)
