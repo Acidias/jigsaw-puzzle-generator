@@ -70,6 +70,16 @@ class ModelState: ObservableObject {
         liveMetrics = nil
     }
 
+    /// Save any accumulated live metrics to the model as partial results.
+    /// Called on cancel/failure so partial training progress is preserved.
+    func savePartialMetrics() {
+        guard let model = trainingModel,
+              let metrics = liveMetrics,
+              !metrics.trainLoss.isEmpty else { return }
+        model.metrics = metrics
+        ModelStore.saveModel(model)
+    }
+
     func loadModels() {
         models = ModelStore.loadAllModels()
     }

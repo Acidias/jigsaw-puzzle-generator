@@ -222,6 +222,7 @@ enum TrainingRunner {
 
         if trainExitCode != 0 {
             await MainActor.run {
+                state.savePartialMetrics()
                 state.trainingStatus = .failed(reason: "Training failed (exit code \(trainExitCode))")
                 model.status = .designed
                 ModelStore.saveModel(model)
@@ -283,6 +284,7 @@ enum TrainingRunner {
     static func cancel(state: ModelState) {
         currentProcess?.terminate()
         currentProcess = nil
+        state.savePartialMetrics()
         if let model = state.trainingModel {
             model.status = .designed
             ModelStore.saveModel(model)
@@ -415,6 +417,7 @@ enum TrainingRunner {
 
     private static func handleCancellationOrFailure(error: Error, model: SiameseModel, state: ModelState) async {
         await MainActor.run {
+            state.savePartialMetrics()
             if (error as NSError).domain == NSCocoaErrorDomain {
                 state.trainingStatus = .cancelled
                 state.appendLog("Training cancelled.")

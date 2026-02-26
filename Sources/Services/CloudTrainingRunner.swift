@@ -494,6 +494,7 @@ enum CloudTrainingRunner {
     static func cancel(state: ModelState) {
         currentProcess?.terminate()
         currentProcess = nil
+        state.savePartialMetrics()
         if let model = state.trainingModel {
             model.status = .designed
             ModelStore.saveModel(model)
@@ -614,6 +615,7 @@ enum CloudTrainingRunner {
 
     private static func handleFailure(reason: String, model: SiameseModel, state: ModelState) async {
         await MainActor.run {
+            state.savePartialMetrics()
             state.trainingStatus = .failed(reason: reason)
             model.status = .designed
             ModelStore.saveModel(model)
@@ -622,6 +624,7 @@ enum CloudTrainingRunner {
 
     private static func handleCancellationOrFailure(error: Error, model: SiameseModel, state: ModelState) async {
         await MainActor.run {
+            state.savePartialMetrics()
             if (error as NSError).domain == NSCocoaErrorDomain {
                 state.trainingStatus = .cancelled
                 state.appendLog("Cloud training cancelled.")
