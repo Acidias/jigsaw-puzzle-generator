@@ -320,7 +320,7 @@ struct ModelTrainingPanel: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 Button {
-                    createModel(andExport: false, andTrain: false)
+                    createModel(andTrain: false)
                 } label: {
                     Label("Create Model", systemImage: "plus.circle")
                 }
@@ -329,16 +329,7 @@ struct ModelTrainingPanel: View {
                 .disabled(!canCreate)
 
                 Button {
-                    createModel(andExport: true, andTrain: false)
-                } label: {
-                    Label("Create & Export...", systemImage: "square.and.arrow.up")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(!canCreate)
-
-                Button {
-                    createModel(andExport: false, andTrain: true)
+                    createModel(andTrain: true)
                 } label: {
                     Label("Create & Train", systemImage: "play.fill")
                 }
@@ -383,7 +374,7 @@ struct ModelTrainingPanel: View {
 
     // MARK: - Actions
 
-    private func createModel(andExport: Bool, andTrain: Bool) {
+    private func createModel(andTrain: Bool) {
         guard let architecture = resolvedArchitecture,
               let dataset = selectedDataset else { return }
         let name = modelName.trimmingCharacters(in: .whitespaces)
@@ -396,10 +387,6 @@ struct ModelTrainingPanel: View {
             architecture: architecture
         )
         modelState.addModel(model)
-
-        if andExport {
-            exportModel(model, dataset: dataset)
-        }
 
         if andTrain {
             // Navigate to the model detail view, then start training
@@ -414,30 +401,6 @@ struct ModelTrainingPanel: View {
                     await TrainingRunner.train(model: model, dataset: dataset, state: modelState)
                 }
             }
-        }
-    }
-
-    private func exportModel(_ model: SiameseModel, dataset: PuzzleDataset) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.message = "Choose a folder to export the training package"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try TrainingScriptGenerator.exportTrainingPackage(
-                model: model,
-                dataset: dataset,
-                to: url
-            )
-            model.status = .exported
-            ModelStore.saveModel(model)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Export Failed"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
         }
     }
 }

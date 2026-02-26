@@ -124,19 +124,12 @@ struct SidebarView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                        Spacer()
+                        modelMenu(model)
                     }
                     .tag(SidebarItem.model(model.id))
                     .contextMenu {
-                        Button("Rename...") {
-                            promptRenameModel(model)
-                        }
-                        Divider()
-                        Button("Delete") {
-                            modelState.deleteModel(model)
-                            if case .model(model.id) = selection {
-                                selection = .modelTraining
-                            }
-                        }
+                        modelMenuItems(model)
                     }
                 }
             }
@@ -273,6 +266,123 @@ struct SidebarView: View {
                 model.name = newName
                 ModelStore.saveModel(model)
             }
+        }
+    }
+
+    // MARK: - Model Menu
+
+    private func modelMenu(_ model: SiameseModel) -> some View {
+        Menu {
+            modelMenuItems(model)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 20)
+    }
+
+    @ViewBuilder
+    private func modelMenuItems(_ model: SiameseModel) -> some View {
+        Button("Export Training Package...") {
+            exportTrainingPackage(model)
+        }
+
+        if model.status == .trained {
+            Button("Export with Results...") {
+                exportModelWithResults(model)
+            }
+        }
+
+        Divider()
+
+        Button("Rename...") {
+            promptRenameModel(model)
+        }
+
+        Divider()
+
+        Button("Delete") {
+            modelState.deleteModel(model)
+            if case .model(model.id) = selection {
+                selection = .modelTraining
+            }
+        }
+    }
+
+    private func exportTrainingPackage(_ model: SiameseModel) {
+        guard let dataset = datasetState.datasets.first(where: { $0.id == model.sourceDatasetID }) else {
+            let alert = NSAlert()
+            alert.messageText = "Dataset Not Found"
+            alert.informativeText = "The source dataset \"\(model.sourceDatasetName)\" is no longer available. Export requires the original dataset."
+            alert.runModal()
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder to export the training package"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try TrainingScriptGenerator.exportTrainingPackage(
+                model: model,
+                dataset: dataset,
+                to: url
+            )
+            model.status = .exported
+            ModelStore.saveModel(model)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Export Failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
+    private func exportModelWithResults(_ model: SiameseModel) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder to export the model with results"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let modelDir = ModelStore.modelDirectory(for: model.id)
+        let fm = FileManager.default
+        let filesToExport = ["manifest.json", "metrics.json"]
+
+        do {
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+
+            for filename in filesToExport {
+                let source = modelDir.appendingPathComponent(filename)
+                guard fm.fileExists(atPath: source.path) else { continue }
+                let dest = url.appendingPathComponent(filename)
+                if fm.fileExists(atPath: dest.path) {
+                    try fm.removeItem(at: dest)
+                }
+                try fm.copyItem(at: source, to: dest)
+            }
+
+            // Copy model.mlpackage directory if present
+            let mlpackageSource = ModelStore.coreMLModelPath(for: model.id)
+            if fm.fileExists(atPath: mlpackageSource.path) {
+                let mlpackageDest = url.appendingPathComponent("model.mlpackage")
+                if fm.fileExists(atPath: mlpackageDest.path) {
+                    try fm.removeItem(at: mlpackageDest)
+                }
+                try fm.copyItem(at: mlpackageSource, to: mlpackageDest)
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Export Failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
         }
     }
 
