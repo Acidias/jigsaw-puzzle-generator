@@ -8,6 +8,8 @@ enum CloudTrainingRunner {
 
     /// Holds a reference to the running SSH/SCP process for cancellation.
     nonisolated(unsafe) private static var currentProcess: Process?
+    /// Stores the cloud config of the active training session for remote cleanup on cancel.
+    nonisolated(unsafe) private static var activeConfig: CloudConfig?
 
     // MARK: - SSH/SCP Flag Builders
 
@@ -86,6 +88,7 @@ enum CloudTrainingRunner {
         state.trainingStatus = .preparingEnvironment
         model.status = .training
         ModelStore.saveModel(model)
+        activeConfig = config
 
         // Write train.py + requirements.txt locally to a temp dir
         // Dataset path is relative (./dataset) since we upload it alongside the script
@@ -486,7 +489,7 @@ enum CloudTrainingRunner {
 
     // MARK: - Cancel
 
-    /// Cancel the running cloud training process.
+    /// Cancel the running cloud training process and kill the remote training.
     @MainActor
     static func cancel(state: ModelState) {
         currentProcess?.terminate()
@@ -497,6 +500,22 @@ enum CloudTrainingRunner {
         }
         state.trainingStatus = .cancelled
         state.appendLog("Cloud training cancelled by user.")
+
+        // Kill the remote training process so it doesn't keep running orphaned
+        if let config = activeConfig {
+            let remote = remoteTarget(config)
+            let flags = sshFlags(config)
+            activeConfig = nil
+            Task.detached {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+                process.arguments = flags + [remote, "pkill -f 'python train.py'"]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try? process.run()
+                process.waitUntilExit()
+            }
+        }
     }
 
     // MARK: - Subprocess Runner
