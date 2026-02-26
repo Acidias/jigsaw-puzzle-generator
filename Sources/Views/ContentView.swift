@@ -7,6 +7,7 @@ struct ContentView: View {
     @StateObject private var batchState = BatchState()
     @StateObject private var openverseState = OpenverseSearchState()
     @StateObject private var datasetState = DatasetState()
+    @StateObject private var modelState = ModelState()
     @State private var sidebarSelection: SidebarItem? = nil
     @State private var isDragTargeted = false
     @State private var errorMessage: String?
@@ -21,7 +22,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(datasetState: datasetState, selection: $sidebarSelection)
+            SidebarView(datasetState: datasetState, modelState: modelState, selection: $sidebarSelection)
         } detail: {
             VStack(spacing: 0) {
                 Group {
@@ -35,6 +36,12 @@ struct ContentView: View {
                     case .dataset(let id):
                         if let dataset = datasetState.datasets.first(where: { $0.id == id }) {
                             DatasetDetailView(dataset: dataset, datasetState: datasetState)
+                        }
+                    case .modelTraining:
+                        ModelTrainingPanel(modelState: modelState, datasetState: datasetState)
+                    case .model(let id):
+                        if let model = modelState.models.first(where: { $0.id == id }) {
+                            ModelDetailView(model: model, modelState: modelState, datasetState: datasetState)
                         }
                     default:
                         projectDetailView
@@ -166,6 +173,7 @@ struct ContentView: View {
         }
         .task {
             datasetState.loadDatasets()
+            modelState.loadModels()
         }
     }
 

@@ -5,6 +5,8 @@ enum SidebarItem: Hashable {
     case batchOpenverse
     case datasetGeneration
     case dataset(UUID)
+    case modelTraining
+    case model(UUID)
     case project(UUID)
     case cut(UUID)
     case cutImage(UUID)
@@ -14,6 +16,7 @@ enum SidebarItem: Hashable {
 struct SidebarView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var datasetState: DatasetState
+    @ObservedObject var modelState: ModelState
     @Binding var selection: SidebarItem?
 
     var body: some View {
@@ -59,6 +62,37 @@ struct SidebarView: View {
                         }
                     }
                 }
+
+                Label("Model Training", systemImage: "network")
+                    .tag(SidebarItem.modelTraining)
+
+                ForEach(modelState.models) { model in
+                    HStack(spacing: 8) {
+                        Image(systemName: modelStatusIcon(model.status))
+                            .foregroundStyle(modelStatusColour(model.status))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(model.name)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Text(model.status.rawValue.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tag(SidebarItem.model(model.id))
+                    .contextMenu {
+                        Button("Rename...") {
+                            promptRenameModel(model)
+                        }
+                        Divider()
+                        Button("Delete") {
+                            modelState.deleteModel(model)
+                            if case .model(model.id) = selection {
+                                selection = .modelTraining
+                            }
+                        }
+                    }
+                }
             }
 
             Section("Projects") {
@@ -76,7 +110,7 @@ struct SidebarView: View {
 
     private func handleSelection(_ item: SidebarItem?) {
         switch item {
-        case .batchLocal, .batchOpenverse, .datasetGeneration, .dataset:
+        case .batchLocal, .batchOpenverse, .datasetGeneration, .dataset, .modelTraining, .model:
             appState.selectedProjectID = nil
             appState.selectedCutID = nil
             appState.selectedCutImageID = nil
@@ -155,6 +189,42 @@ struct SidebarView: View {
             alert.messageText = "Export Failed"
             alert.informativeText = error.localizedDescription
             alert.runModal()
+        }
+    }
+
+    private func modelStatusIcon(_ status: ModelStatus) -> String {
+        switch status {
+        case .designed: return "circle.dashed"
+        case .exported: return "arrow.up.circle"
+        case .trained: return "checkmark.circle.fill"
+        }
+    }
+
+    private func modelStatusColour(_ status: ModelStatus) -> Color {
+        switch status {
+        case .designed: return .blue
+        case .exported: return .orange
+        case .trained: return .green
+        }
+    }
+
+    private func promptRenameModel(_ model: SiameseModel) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Model"
+        alert.informativeText = "Enter a new name for the model."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        textField.stringValue = model.name
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                model.name = newName
+                ModelStore.saveModel(model)
+            }
         }
     }
 }
