@@ -32,18 +32,21 @@ struct SidebarView: View {
 
             Section("AI Tools") {
                 Label("Dataset Generation", systemImage: "brain")
+                    .font(.body)
+                    .fontWeight(.semibold)
                     .tag(SidebarItem.datasetGeneration)
 
                 ForEach(datasetState.datasets) { dataset in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: "brain.filled.head.profile")
+                            .font(.caption)
                             .foregroundStyle(.purple)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 1) {
                             Text(dataset.name)
-                                .fontWeight(.medium)
+                                .font(.callout)
                                 .lineLimit(1)
                             Text("\(dataset.totalPairs) pairs")
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -66,18 +69,21 @@ struct SidebarView: View {
                 }
 
                 Label("Architecture Presets", systemImage: "rectangle.3.group")
+                    .font(.body)
+                    .fontWeight(.semibold)
                     .tag(SidebarItem.architecturePresets)
 
                 ForEach(modelState.presets) { preset in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: preset.isBuiltIn ? "lock.rectangle.stack" : "rectangle.stack")
+                            .font(.caption)
                             .foregroundStyle(preset.isBuiltIn ? .orange : .teal)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 1) {
                             Text(preset.name)
-                                .fontWeight(.medium)
+                                .font(.callout)
                                 .lineLimit(1)
                             Text("\(preset.architecture.convBlocks.count) blocks, \(preset.architecture.embeddingDimension)-d")
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -101,18 +107,21 @@ struct SidebarView: View {
                 }
 
                 Label("Model Training", systemImage: "network")
+                    .font(.body)
+                    .fontWeight(.semibold)
                     .tag(SidebarItem.modelTraining)
 
                 ForEach(modelState.models) { model in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: modelStatusIcon(model.status))
+                            .font(.caption)
                             .foregroundStyle(modelStatusColour(model.status))
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 1) {
                             Text(model.name)
-                                .fontWeight(.medium)
+                                .font(.callout)
                                 .lineLimit(1)
                             Text(model.status.rawValue.capitalized)
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
