@@ -485,23 +485,42 @@ struct ModelDetailView: View {
     }
 
     private var trainingLogView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                Text(trainingLogText)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(6)
-                    .id("log-bottom")
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(trainingLogText)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(6)
+                        .id("log-bottom")
+                }
+                .frame(maxHeight: 200)
+                .onChange(of: modelState.trainingLog.count) { _, _ in
+                    proxy.scrollTo("log-bottom", anchor: .bottom)
+                }
             }
-            .frame(maxHeight: 200)
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .onChange(of: modelState.trainingLog.count) { _, _ in
-                proxy.scrollTo("log-bottom", anchor: .bottom)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(trainingLogText, forType: .string)
+                } label: {
+                    Label("Copy Log", systemImage: "doc.on.doc")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(trainingLogText.isEmpty)
             }
+            .padding(4)
         }
+        .background(Color(nsColor: .textBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private func startTraining() {
