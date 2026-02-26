@@ -407,7 +407,7 @@ struct ModelTrainingPanel: View {
                     Text("Script")
                         .frame(width: 70)
                     Text("Date")
-                        .frame(width: 90)
+                        .frame(width: 140)
                 }
                 .font(.caption)
                 .fontWeight(.semibold)
@@ -497,7 +497,7 @@ struct ModelTrainingPanel: View {
                 .font(.callout.monospaced())
                 .frame(width: 70)
             Text(dateText)
-                .frame(width: 90)
+                .frame(width: 140)
         }
         .font(.callout.monospacedDigit())
         .padding(.vertical, 5)
@@ -518,7 +518,7 @@ struct ModelTrainingPanel: View {
     private static let shortDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .short
-        f.timeStyle = .none
+        f.timeStyle = .short
         return f
     }()
 
