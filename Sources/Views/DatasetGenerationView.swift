@@ -521,6 +521,8 @@ struct DatasetDetailView: View {
     @ObservedObject var dataset: PuzzleDataset
     @ObservedObject var datasetState: DatasetState
     @State private var samplePairs: [SamplePair] = []
+    @State private var selectedCategory: DatasetCategory? = nil
+    @State private var browsePairs: [BrowsePair] = []
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -570,8 +572,8 @@ struct DatasetDetailView: View {
                     .padding(8)
                 }
 
-                // Sample pair previews
-                if !samplePairs.isEmpty {
+                // Pair browser
+                if !samplePairs.isEmpty || selectedCategory != nil {
                     samplePairsSection
                 }
 
@@ -704,13 +706,101 @@ struct DatasetDetailView: View {
     // MARK: - Sample Pairs
 
     private var samplePairsSection: some View {
-        GroupBox("Sample Pairs") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
-                ForEach(samplePairs, id: \.id) { pair in
-                    SamplePairCard(pair: pair)
+        GroupBox {
+            VStack(spacing: 12) {
+                // Tab bar
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        categoryTab(label: "Samples", count: nil, colour: .purple, isSelected: selectedCategory == nil) {
+                            selectedCategory = nil
+                        }
+                        ForEach(DatasetCategory.allCases, id: \.rawValue) { category in
+                            let total = totalCount(for: category)
+                            categoryTab(
+                                label: category.displayName,
+                                count: total,
+                                colour: categoryColour(category),
+                                isSelected: selectedCategory == category
+                            ) {
+                                selectedCategory = category
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+
+                // Content
+                if let category = selectedCategory {
+                    // Full category browser
+                    if browsePairs.isEmpty {
+                        Text("No pairs found for \(category.displayName)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("\(browsePairs.count) pairs")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                                ForEach(browsePairs) { pair in
+                                    BrowsePairCard(pair: pair, categoryColour: categoryColour(category))
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Samples tab - existing 2-per-category preview
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                        ForEach(samplePairs, id: \.id) { pair in
+                            SamplePairCard(pair: pair)
+                        }
+                    }
                 }
             }
             .padding(8)
+        } label: {
+            Text("Pairs")
+        }
+        .onChange(of: selectedCategory) { _, newCategory in
+            if let category = newCategory {
+                browsePairs = loadBrowsePairs(category: category)
+            } else {
+                browsePairs = []
+            }
+        }
+    }
+
+    private func categoryTab(label: String, count: Int?, colour: Color, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                if let count {
+                    Text("\(count)")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(isSelected ? Color.white.opacity(0.2) : colour.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+            .foregroundStyle(isSelected ? .white : colour)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(isSelected ? colour : colour.opacity(0.08))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func totalCount(for category: DatasetCategory) -> Int {
+        dataset.splitCounts.values.reduce(0) { sum, catCounts in
+            sum + (catCounts[category] ?? 0)
         }
     }
 
@@ -769,6 +859,41 @@ struct DatasetDetailView: View {
         return pairs
     }
 
+    private func loadBrowsePairs(category: DatasetCategory) -> [BrowsePair] {
+        let datasetDir = DatasetStore.datasetDirectory(for: dataset.id)
+        let fm = FileManager.default
+        var pairs: [BrowsePair] = []
+
+        for split in DatasetSplit.allCases {
+            let catDir = datasetDir
+                .appendingPathComponent(split.rawValue)
+                .appendingPathComponent(category.rawValue)
+            guard fm.fileExists(atPath: catDir.path) else { continue }
+
+            guard let files = try? fm.contentsOfDirectory(at: catDir, includingPropertiesForKeys: nil)
+                .filter({ $0.lastPathComponent.hasSuffix("_left.png") })
+                .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+            else { continue }
+
+            for leftFile in files {
+                let rightFile = catDir.appendingPathComponent(
+                    leftFile.lastPathComponent.replacingOccurrences(of: "_left.png", with: "_right.png")
+                )
+                guard fm.fileExists(atPath: rightFile.path) else { continue }
+
+                pairs.append(BrowsePair(
+                    leftURL: leftFile,
+                    rightURL: rightFile,
+                    split: split,
+                    filename: leftFile.deletingPathExtension().lastPathComponent
+                        .replacingOccurrences(of: "_left", with: "")
+                ))
+            }
+        }
+
+        return pairs
+    }
+
     // MARK: - Actions
 
     private func exportDataset() {
@@ -790,6 +915,77 @@ struct DatasetDetailView: View {
     }
 }
 
+// MARK: - Browse Pair Card
+
+private struct BrowsePairCard: View {
+    let pair: BrowsePair
+    let categoryColour: Color
+
+    @State private var leftImage: NSImage?
+    @State private var rightImage: NSImage?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Side-by-side pieces
+            HStack(spacing: 4) {
+                pieceImage(leftImage)
+                pieceImage(rightImage)
+            }
+
+            // Label
+            HStack(spacing: 6) {
+                Text(pair.split.rawValue.capitalized)
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(splitColour(pair.split))
+                    .clipShape(Capsule())
+
+                Text(pair.filename)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(8)
+        .background(Color.primary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .task {
+            leftImage = NSImage(contentsOf: pair.leftURL)
+            rightImage = NSImage(contentsOf: pair.rightURL)
+        }
+    }
+
+    @ViewBuilder
+    private func pieceImage(_ image: NSImage?) -> some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxHeight: 120)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+        } else {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.primary.opacity(0.05))
+                .frame(height: 120)
+                .overlay {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                }
+        }
+    }
+
+    private func splitColour(_ split: DatasetSplit) -> Color {
+        switch split {
+        case .train: return .blue
+        case .test: return .orange
+        case .valid: return .teal
+        }
+    }
+}
+
 // MARK: - Sample Pair Model
 
 private struct SamplePair: Identifiable {
@@ -797,6 +993,16 @@ private struct SamplePair: Identifiable {
     let category: DatasetCategory
     let leftImage: NSImage
     let rightImage: NSImage
+    let filename: String
+}
+
+// MARK: - Browse Pair Model
+
+private struct BrowsePair: Identifiable {
+    let id = UUID()
+    let leftURL: URL
+    let rightURL: URL
+    let split: DatasetSplit
     let filename: String
 }
 
