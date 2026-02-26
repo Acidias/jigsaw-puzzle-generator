@@ -166,29 +166,108 @@ enum CloudTrainingRunner {
             return
         }
 
-        // Step 3: Upload dataset
-        await MainActor.run {
-            state.trainingStatus = .uploadingDataset
-            state.appendLog("Uploading dataset to \(config.hostname)...")
-        }
+        // Step 3: Upload dataset (cached by UUID - skip if already present and complete)
+        let remoteDatasetCache = "\(remoteDir)/datasets/\(dataset.id.uuidString)"
+        let remoteDatasetLink = "\(remoteDir)/dataset"
+
+        // Count local files for comparison
+        let localFileCount = countFiles(in: datasetDir)
+        state.appendLog("Local dataset: \(localFileCount) files")
+
+        // Check if dataset already exists on remote with matching file count
+        var datasetNeedsUpload = true
         do {
+            state.appendLog("Checking for cached dataset on remote...")
+            let captured = CapturedLine()
             let exitCode = try await runProcess(
-                executable: "/usr/bin/scp",
-                arguments: scpFlags(config) + ["-r", datasetDir.path, "\(remote):\(remoteDir)/dataset"],
+                executable: "/usr/bin/ssh",
+                arguments: sshFlags(config) + [remote, "test -d \(remoteDatasetCache) && find \(remoteDatasetCache) -type f | wc -l || echo 0"],
                 workingDirectory: nil,
                 environment: [:],
                 onStdoutLine: { line in
-                    Task { @MainActor in state.appendLog("[scp] \(line)") }
+                    captured.value = line.trimmingCharacters(in: .whitespaces)
                 },
+                onStderrLine: { _ in }
+            )
+            let remoteCountStr = captured.value
+            if exitCode == 0, let remoteCount = Int(remoteCountStr), remoteCount == localFileCount {
+                state.appendLog("Dataset already cached on remote (\(remoteCount) files match) - skipping upload")
+                datasetNeedsUpload = false
+            } else {
+                let count = Int(remoteCountStr) ?? 0
+                state.appendLog("Remote has \(count) files, local has \(localFileCount) - upload needed")
+            }
+        } catch {
+            state.appendLog("Could not check remote dataset, will upload")
+        }
+
+        if datasetNeedsUpload {
+            await MainActor.run {
+                state.trainingStatus = .uploadingDataset
+                state.appendLog("Uploading dataset to \(config.hostname)...")
+            }
+
+            // Remove incomplete cache if it exists
+            do {
+                _ = try await runProcess(
+                    executable: "/usr/bin/ssh",
+                    arguments: sshFlags(config) + [remote, "rm -rf \(remoteDatasetCache)"],
+                    workingDirectory: nil,
+                    environment: [:],
+                    onStdoutLine: { _ in },
+                    onStderrLine: { _ in }
+                )
+            } catch {}
+
+            // Upload to datasets/<uuid>/
+            do {
+                _ = try await runProcess(
+                    executable: "/usr/bin/ssh",
+                    arguments: sshFlags(config) + [remote, "mkdir -p \(remoteDatasetCache)"],
+                    workingDirectory: nil,
+                    environment: [:],
+                    onStdoutLine: { _ in },
+                    onStderrLine: { _ in }
+                )
+                let exitCode = try await runProcess(
+                    executable: "/usr/bin/scp",
+                    arguments: scpFlags(config) + ["-r", datasetDir.path + "/.", "\(remote):\(remoteDatasetCache)/"],
+                    workingDirectory: nil,
+                    environment: [:],
+                    onStdoutLine: { line in
+                        Task { @MainActor in state.appendLog("[scp] \(line)") }
+                    },
+                    onStderrLine: { line in
+                        Task { @MainActor in state.appendLog("[scp] \(line)") }
+                    }
+                )
+                if exitCode != 0 {
+                    await handleFailure(reason: "Dataset upload failed (exit code \(exitCode))", model: model, state: state)
+                    return
+                }
+                state.appendLog("Dataset uploaded")
+            } catch {
+                await handleCancellationOrFailure(error: error, model: model, state: state)
+                return
+            }
+        }
+
+        // Create/update symlink so train.py can read from ./dataset
+        do {
+            let exitCode = try await runProcess(
+                executable: "/usr/bin/ssh",
+                arguments: sshFlags(config) + [remote, "ln -sfn \(remoteDatasetCache) \(remoteDatasetLink)"],
+                workingDirectory: nil,
+                environment: [:],
+                onStdoutLine: { _ in },
                 onStderrLine: { line in
-                    Task { @MainActor in state.appendLog("[scp] \(line)") }
+                    Task { @MainActor in state.appendLog("[ssh] \(line)") }
                 }
             )
             if exitCode != 0 {
-                await handleFailure(reason: "Dataset upload failed (exit code \(exitCode))", model: model, state: state)
+                await handleFailure(reason: "Failed to create dataset symlink", model: model, state: state)
                 return
             }
-            state.appendLog("Dataset uploaded")
         } catch {
             await handleCancellationOrFailure(error: error, model: model, state: state)
             return
@@ -461,6 +540,30 @@ enum CloudTrainingRunner {
     }
 
     // MARK: - Helpers
+
+    /// Thread-safe container for capturing a single line from a process callback.
+    private final class CapturedLine: @unchecked Sendable {
+        var value: String = ""
+    }
+
+    /// Count all files recursively in a local directory.
+    private static func countFiles(in directory: URL) -> Int {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+
+        var count = 0
+        for case let url as URL in enumerator {
+            if let values = try? url.resourceValues(forKeys: [.isRegularFileKey]),
+               values.isRegularFile == true {
+                count += 1
+            }
+        }
+        return count
+    }
 
     private static func handleFailure(reason: String, model: SiameseModel, state: ModelState) async {
         await MainActor.run {
