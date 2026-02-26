@@ -13,7 +13,7 @@ struct CloudConfig: Codable, Equatable {
         username: String = "root",
         sshKeyPath: String = "~/.ssh/id_rsa",
         port: Int = 22,
-        remoteWorkDir: String = "/root/training"
+        remoteWorkDir: String = "/workspace/training"
     ) {
         self.hostname = hostname
         self.username = username

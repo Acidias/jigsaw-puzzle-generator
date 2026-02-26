@@ -381,7 +381,7 @@ struct ModelTrainingPanel: View {
                 Text("Dir:")
                     .font(.callout)
                     .frame(width: 60, alignment: .trailing)
-                TextField("/root/training", text: $modelState.cloudConfig.remoteWorkDir)
+                TextField("/workspace/training", text: $modelState.cloudConfig.remoteWorkDir)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: modelState.cloudConfig.remoteWorkDir) { _, _ in
                         CloudConfigStore.save(modelState.cloudConfig)
