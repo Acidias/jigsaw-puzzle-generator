@@ -67,13 +67,13 @@ struct SiameseArchitecture: Codable, Equatable {
     var inputSize: Int
     var devicePreference: DevicePreference
 
-    /// Spatial dimensions are halved per MaxPool layer.
-    /// Flattened size = last filter count * (inputSize / 2^poolCount)^2.
+    /// AdaptiveAvgPool2d reduces spatial dims to a fixed 4x4 grid before the
+    /// embedding head, making flattened size independent of input resolution.
+    static let adaptivePoolSize = 4
+
     var flattenedSize: Int {
-        let poolCount = convBlocks.filter(\.useMaxPool).count
-        let spatialDim = max(1, inputSize / (1 << poolCount))
         let lastFilters = convBlocks.last?.filters ?? 1
-        return lastFilters * spatialDim * spatialDim
+        return lastFilters * Self.adaptivePoolSize * Self.adaptivePoolSize
     }
 
     init(

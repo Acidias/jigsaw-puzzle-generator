@@ -108,6 +108,7 @@ enum TrainingScriptGenerator {
                 layers = []
                 in_channels = 3
         \(generateConvBlocksPython(arch.convBlocks))
+                layers.append(nn.AdaptiveAvgPool2d((\(SiameseArchitecture.adaptivePoolSize), \(SiameseArchitecture.adaptivePoolSize))))
                 self.backbone = nn.Sequential(*layers)
 
                 # Embedding head
