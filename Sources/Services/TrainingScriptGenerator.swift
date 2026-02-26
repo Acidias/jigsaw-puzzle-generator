@@ -91,8 +91,8 @@ enum TrainingScriptGenerator {
 
             def __getitem__(self, idx):
                 left_path, right_path, label = self.pairs[idx]
-                left_img = Image.open(left_path).convert("RGB")
-                right_img = Image.open(right_path).convert("RGB")
+                left_img = Image.open(left_path).convert("RGBA")
+                right_img = Image.open(right_path).convert("RGBA")
 
                 if self.transform:
                     left_img = self.transform(left_img)
@@ -111,7 +111,7 @@ enum TrainingScriptGenerator {
 
                 # Shared CNN backbone
                 layers = []
-                in_channels = 3
+                in_channels = 4  # RGBA: RGB + alpha (piece silhouette)
         \(generateConvBlocksPython(arch.convBlocks))
                 self.backbone = nn.Sequential(*layers)
                 self.pool = nn.AdaptiveAvgPool2d((\(SiameseArchitecture.adaptivePoolSize), \(SiameseArchitecture.adaptivePoolSize)))
@@ -265,15 +265,31 @@ enum TrainingScriptGenerator {
             return confusion_matrix, per_category
 
 
+        class RGBAAugment:
+            \"\"\"Apply colour augmentations to RGB channels only, preserving alpha.\"\"\"
+
+            def __init__(self, rgb_aug):
+                self.rgb_aug = rgb_aug
+
+            def __call__(self, img):
+                r, g, b, a = img.split()
+                rgb = Image.merge("RGB", (r, g, b))
+                rgb = self.rgb_aug(rgb)
+                r2, g2, b2 = rgb.split()
+                return Image.merge("RGBA", (r2, g2, b2, a))
+
+
         def main():
-            # Transforms - augmentation for training only
-            NORM_MEAN = [0.5, 0.5, 0.5]
-            NORM_STD = [0.5, 0.5, 0.5]
+            # Transforms - augmentation for training only (RGBA: 4 channels)
+            NORM_MEAN = [0.5, 0.5, 0.5, 0.5]
+            NORM_STD = [0.5, 0.5, 0.5, 0.5]
 
             train_transform = transforms.Compose([
                 transforms.Resize((INPUT_SIZE, INPUT_SIZE)),
-                transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
-                transforms.RandomGrayscale(p=0.1),
+                RGBAAugment(transforms.Compose([
+                    transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
+                    transforms.RandomGrayscale(p=0.1),
+                ])),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
             ])
@@ -401,15 +417,15 @@ enum TrainingScriptGenerator {
                 import coremltools as ct
 
                 model.cpu()
-                example_left = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
-                example_right = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
+                example_left = torch.randn(1, 4, INPUT_SIZE, INPUT_SIZE)
+                example_right = torch.randn(1, 4, INPUT_SIZE, INPUT_SIZE)
                 traced = torch.jit.trace(model, (example_left, example_right))
 
                 ml_model = ct.convert(
                     traced,
                     inputs=[
-                        ct.TensorType(name="left", shape=(1, 3, INPUT_SIZE, INPUT_SIZE)),
-                        ct.TensorType(name="right", shape=(1, 3, INPUT_SIZE, INPUT_SIZE)),
+                        ct.TensorType(name="left", shape=(1, 4, INPUT_SIZE, INPUT_SIZE)),
+                        ct.TensorType(name="right", shape=(1, 4, INPUT_SIZE, INPUT_SIZE)),
                     ],
                 )
                 ml_model.save("model.mlpackage")

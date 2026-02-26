@@ -9,12 +9,12 @@ struct NetworkDiagramView: View {
         VStack(spacing: 0) {
             // Input layer
             HStack(spacing: 40) {
-                nodeBox("Input", subtitle: "\(architecture.inputSize)x\(architecture.inputSize)x3", colour: .blue)
+                nodeBox("Input", subtitle: "\(architecture.inputSize)x\(architecture.inputSize)x4", colour: .blue)
                 Text("Shared Weights")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .italic()
-                nodeBox("Input", subtitle: "\(architecture.inputSize)x\(architecture.inputSize)x3", colour: .blue)
+                nodeBox("Input", subtitle: "\(architecture.inputSize)x\(architecture.inputSize)x4", colour: .blue)
             }
 
             connectorLine()
