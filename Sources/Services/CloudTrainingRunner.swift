@@ -219,7 +219,7 @@ enum CloudTrainingRunner {
                 )
             } catch {}
 
-            // Upload to datasets/<uuid>/
+            // Upload to datasets/<uuid>/ with periodic progress polling
             do {
                 _ = try await runProcess(
                     executable: "/usr/bin/ssh",
@@ -229,6 +229,34 @@ enum CloudTrainingRunner {
                     onStdoutLine: { _ in },
                     onStderrLine: { _ in }
                 )
+
+                // Start progress monitor that polls remote file count every 15 seconds
+                let progressTask = Task {
+                    let sshFlagsForPoll = sshFlags(config)
+                    let pollTarget = remoteTarget(config)
+                    while !Task.isCancelled {
+                        try await Task.sleep(nanoseconds: 15_000_000_000)
+                        guard !Task.isCancelled else { break }
+                        let captured = CapturedLine()
+                        let _ = try? await runProcess(
+                            executable: "/usr/bin/ssh",
+                            arguments: sshFlagsForPoll + [pollTarget, "find \(remoteDatasetCache) -type f | wc -l"],
+                            workingDirectory: nil,
+                            environment: [:],
+                            onStdoutLine: { line in
+                                captured.value = line.trimmingCharacters(in: .whitespaces)
+                            },
+                            onStderrLine: { _ in }
+                        )
+                        if let count = Int(captured.value), count > 0 {
+                            let pct = localFileCount > 0 ? Int(Double(count) / Double(localFileCount) * 100) : 0
+                            await MainActor.run {
+                                state.appendLog("Upload progress: \(count)/\(localFileCount) files (\(pct)%)")
+                            }
+                        }
+                    }
+                }
+
                 let exitCode = try await runProcess(
                     executable: "/usr/bin/scp",
                     arguments: scpFlags(config) + ["-r", datasetDir.path + "/.", "\(remote):\(remoteDatasetCache)/"],
@@ -241,11 +269,14 @@ enum CloudTrainingRunner {
                         Task { @MainActor in state.appendLog("[scp] \(line)") }
                     }
                 )
+
+                progressTask.cancel()
+
                 if exitCode != 0 {
                     await handleFailure(reason: "Dataset upload failed (exit code \(exitCode))", model: model, state: state)
                     return
                 }
-                state.appendLog("Dataset uploaded")
+                state.appendLog("Dataset uploaded (\(localFileCount) files)")
             } catch {
                 await handleCancellationOrFailure(error: error, model: model, state: state)
                 return
