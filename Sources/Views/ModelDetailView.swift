@@ -664,6 +664,166 @@ struct ModelDetailView: View {
                 }
                 .padding(8)
             }
+
+            if let cm = metrics.confusionMatrix {
+                confusionMatrixView(cm)
+            }
+
+            if let perCategory = metrics.perCategoryResults, !perCategory.isEmpty {
+                perCategoryView(perCategory)
+            }
+        }
+    }
+
+    // MARK: - Confusion Matrix
+
+    private func confusionMatrixView(_ cm: ConfusionMatrix) -> some View {
+        let total = cm.truePositives + cm.falsePositives + cm.falseNegatives + cm.trueNegatives
+        return GroupBox("Confusion Matrix") {
+            VStack(spacing: 0) {
+                // Column headers
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: 110, height: 28)
+                    Text("Predicted Match")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                    Text("Predicted Non-match")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+
+                // Actual Match row
+                HStack(spacing: 0) {
+                    Text("Actual\nMatch")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 110)
+                    cmCell(
+                        value: cm.truePositives, total: total,
+                        label: "TP", colour: .green
+                    )
+                    cmCell(
+                        value: cm.falseNegatives, total: total,
+                        label: "FN", colour: .red
+                    )
+                }
+
+                // Actual Non-match row
+                HStack(spacing: 0) {
+                    Text("Actual\nNon-match")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 110)
+                    cmCell(
+                        value: cm.falsePositives, total: total,
+                        label: "FP", colour: .red
+                    )
+                    cmCell(
+                        value: cm.trueNegatives, total: total,
+                        label: "TN", colour: .green
+                    )
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private func cmCell(value: Int, total: Int, label: String, colour: Color) -> some View {
+        let pct = total > 0 ? Double(value) / Double(total) * 100 : 0
+        return VStack(spacing: 2) {
+            Text("\(value)")
+                .font(.title3.monospacedDigit())
+                .fontWeight(.bold)
+            Text("\(label) - \(String(format: "%.1f%%", pct))")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(colour.opacity(0.08))
+        .border(colour.opacity(0.2), width: 0.5)
+    }
+
+    // MARK: - Per-Category Results
+
+    private func perCategoryView(_ results: [String: CategoryResult]) -> some View {
+        let order = ["correct", "wrong_shape_match", "wrong_image_match", "wrong_nothing"]
+        let sorted = order.compactMap { key in
+            results[key].map { (key, $0) }
+        } + results.filter { !order.contains($0.key) }.sorted(by: { $0.key < $1.key }).map { ($0.key, $0.value) }
+
+        return GroupBox("Per-Category Breakdown") {
+            VStack(spacing: 0) {
+                // Header
+                HStack(spacing: 0) {
+                    Text("Category")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Total")
+                        .frame(width: 50)
+                    Text("Match")
+                        .frame(width: 50)
+                    Text("Non-match")
+                        .frame(width: 70)
+                    Text("Accuracy")
+                        .frame(width: 70)
+                }
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+
+                Divider()
+
+                ForEach(Array(sorted.enumerated()), id: \.offset) { _, entry in
+                    let (category, result) = entry
+                    let isCorrect = category == "correct"
+                    // For "correct": accuracy = predictedMatch/total
+                    // For wrong categories: accuracy = predictedNonMatch/total
+                    let accuracy = result.total > 0
+                        ? Double(isCorrect ? result.predictedMatch : result.predictedNonMatch) / Double(result.total)
+                        : 0
+
+                    HStack(spacing: 0) {
+                        Text(categoryDisplayName(category))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("\(result.total)")
+                            .frame(width: 50)
+                        Text("\(result.predictedMatch)")
+                            .foregroundStyle(isCorrect ? .green : (result.predictedMatch > 0 ? .red : .primary))
+                            .frame(width: 50)
+                        Text("\(result.predictedNonMatch)")
+                            .foregroundStyle(isCorrect ? (result.predictedNonMatch > 0 ? .red : .primary) : .green)
+                            .frame(width: 70)
+                        Text(String(format: "%.1f%%", accuracy * 100))
+                            .fontWeight(.medium)
+                            .foregroundStyle(accuracy >= 0.8 ? .green : accuracy >= 0.5 ? .orange : .red)
+                            .frame(width: 70)
+                    }
+                    .font(.callout.monospacedDigit())
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 8)
+
+                    if category != sorted.last?.0 {
+                        Divider()
+                    }
+                }
+            }
+            .padding(4)
+        }
+    }
+
+    private func categoryDisplayName(_ raw: String) -> String {
+        switch raw {
+        case "correct": return "Correct"
+        case "wrong_shape_match": return "Wrong shape match"
+        case "wrong_image_match": return "Wrong image match"
+        case "wrong_nothing": return "Wrong nothing"
+        default: return raw.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
 
