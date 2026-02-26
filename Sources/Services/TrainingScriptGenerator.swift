@@ -38,6 +38,7 @@ enum TrainingScriptGenerator {
         import torch.optim as optim
         from torch.utils.data import Dataset, DataLoader
         import torchvision.transforms as transforms
+        import torchvision.transforms.functional as TF
 
         # ── Configuration ──────────────────────────────────────────────
 
@@ -57,8 +58,9 @@ enum TrainingScriptGenerator {
         class JigsawPairDataset(Dataset):
             \"\"\"Loads jigsaw piece pairs from the dataset directory structure.\"\"\"
 
-            def __init__(self, split_dir, transform=None):
+            def __init__(self, split_dir, transform=None, pair_augment=None):
                 self.transform = transform
+                self.pair_augment = pair_augment
                 self.pairs = []
                 self.categories = []
 
@@ -101,6 +103,9 @@ enum TrainingScriptGenerator {
                 left_path, right_path, label = self.pairs[idx]
                 left_img = Image.open(left_path).convert("RGBA")
                 right_img = Image.open(right_path).convert("RGBA")
+
+                if self.pair_augment:
+                    left_img, right_img = self.pair_augment(left_img, right_img)
 
                 if self.transform:
                     left_img = self.transform(left_img)
@@ -307,31 +312,55 @@ enum TrainingScriptGenerator {
             return best_threshold, best_f1
 
 
-        class RGBAAugment:
-            \"\"\"Apply colour augmentations to RGB channels only, preserving alpha.\"\"\"
+        class PairConsistentRGBAAugment:
+            \"\"\"Sample colour-jitter and grayscale params once, apply identically to both pieces.
+            Preserves alpha channel (piece silhouette). This teaches the model that true
+            neighbours share the same lighting/colour, reducing false negatives.\"\"\"
 
-            def __init__(self, rgb_aug):
-                self.rgb_aug = rgb_aug
+            def __init__(self, brightness=0.3, contrast=0.3, saturation=0.2, grayscale_p=0.1):
+                self.brightness = (max(0, 1 - brightness), 1 + brightness)
+                self.contrast = (max(0, 1 - contrast), 1 + contrast)
+                self.saturation = (max(0, 1 - saturation), 1 + saturation)
+                self.grayscale_p = grayscale_p
 
-            def __call__(self, img):
+            def _augment_one(self, img, fn_idx, b_factor, c_factor, s_factor, do_gray):
                 r, g, b, a = img.split()
                 rgb = Image.merge("RGB", (r, g, b))
-                rgb = self.rgb_aug(rgb)
+                for fn_id in fn_idx:
+                    if fn_id == 0:
+                        rgb = TF.adjust_brightness(rgb, b_factor)
+                    elif fn_id == 1:
+                        rgb = TF.adjust_contrast(rgb, c_factor)
+                    elif fn_id == 2:
+                        rgb = TF.adjust_saturation(rgb, s_factor)
+                if do_gray:
+                    rgb = TF.rgb_to_grayscale(rgb, num_output_channels=3)
                 r2, g2, b2 = rgb.split()
                 return Image.merge("RGBA", (r2, g2, b2, a))
 
+            def __call__(self, img1, img2):
+                fn_idx, b_factor, c_factor, s_factor, _ = transforms.ColorJitter.get_params(
+                    brightness=self.brightness, contrast=self.contrast,
+                    saturation=self.saturation, hue=None,
+                )
+                do_gray = torch.rand(1).item() < self.grayscale_p
+                return (
+                    self._augment_one(img1, fn_idx, b_factor, c_factor, s_factor, do_gray),
+                    self._augment_one(img2, fn_idx, b_factor, c_factor, s_factor, do_gray),
+                )
+
 
         def main():
-            # Transforms - augmentation for training only (RGBA: 4 channels)
+            # Transforms (RGBA: 4 channels)
             NORM_MEAN = [0.5, 0.5, 0.5, 0.5]
             NORM_STD = [0.5, 0.5, 0.5, 0.5]
 
-            train_transform = transforms.Compose([
+            # Pair-consistent augmentation: same colour jitter applied to both pieces
+            pair_augment = PairConsistentRGBAAugment(
+                brightness=0.3, contrast=0.3, saturation=0.2, grayscale_p=0.1,
+            )
+            base_transform = transforms.Compose([
                 transforms.Resize((INPUT_SIZE, INPUT_SIZE)),
-                RGBAAugment(transforms.Compose([
-                    transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
-                    transforms.RandomGrayscale(p=0.1),
-                ])),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
             ])
@@ -342,7 +371,9 @@ enum TrainingScriptGenerator {
             ])
 
             # Load datasets
-            train_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "train"), train_transform)
+            train_dataset = JigsawPairDataset(
+                os.path.join(DATASET_PATH, "train"), base_transform, pair_augment,
+            )
             valid_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "valid"), eval_transform)
             test_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "test"), eval_transform)
 
