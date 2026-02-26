@@ -214,9 +214,19 @@ enum TrainingScriptGenerator {
             print(f"Valid: {len(valid_dataset)} pairs")
             print(f"Test:  {len(test_dataset)} pairs")
 
-            train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
-            valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
-            test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
+            # MPS does not benefit from worker processes (no pin_memory support,
+            # and macOS fork overhead outweighs any parallelism gain).
+            # CUDA benefits from workers + pinned memory for async transfers.
+            use_workers = DEVICE.type == "cuda"
+            loader_kwargs = dict(
+                num_workers=4 if use_workers else 0,
+                pin_memory=use_workers,
+                persistent_workers=use_workers,
+            )
+
+            train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, **loader_kwargs)
+            valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, **loader_kwargs)
+            test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, **loader_kwargs)
 
             # Model
             model = SiameseNetwork().to(DEVICE)
