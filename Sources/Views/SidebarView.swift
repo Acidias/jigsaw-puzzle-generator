@@ -485,6 +485,8 @@ struct SidebarView: View {
                 testPrecision: metrics.testPrecision,
                 testRecall: metrics.testRecall,
                 testF1: metrics.testF1,
+                confusionMatrix: metrics.confusionMatrix,
+                perCategoryResults: metrics.perCategoryResults,
                 epochHistory: epochHistory
             )
         }
@@ -588,6 +590,8 @@ private struct TrainingReport: Codable {
         let testPrecision: Double?
         let testRecall: Double?
         let testF1: Double?
+        let confusionMatrix: ConfusionMatrix?
+        let perCategoryResults: [String: CategoryResult]?
         let epochHistory: [EpochEntry]
     }
 }

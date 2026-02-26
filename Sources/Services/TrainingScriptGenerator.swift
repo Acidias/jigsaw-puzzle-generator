@@ -51,6 +51,7 @@ enum TrainingScriptGenerator {
             def __init__(self, split_dir, transform=None):
                 self.transform = transform
                 self.pairs = []
+                self.categories = []
 
                 labels_path = os.path.join(split_dir, "labels.csv")
                 if not os.path.exists(labels_path):
@@ -62,8 +63,10 @@ enum TrainingScriptGenerator {
                         left_path = os.path.join(split_dir, row["left_file"])
                         right_path = os.path.join(split_dir, row["right_file"])
                         label = int(row["label"])
+                        category = row["left_file"].split("/")[0]
                         if os.path.exists(left_path) and os.path.exists(right_path):
                             self.pairs.append((left_path, right_path, label))
+                            self.categories.append(category)
 
             def _scan_directories(self, split_dir):
                 for category in os.listdir(split_dir):
@@ -80,6 +83,7 @@ enum TrainingScriptGenerator {
                         right_path = os.path.join(cat_dir, rf)
                         if os.path.exists(right_path):
                             self.pairs.append((left_path, right_path, label))
+                            self.categories.append(category)
 
             def __len__(self):
                 return len(self.pairs)
@@ -198,6 +202,61 @@ enum TrainingScriptGenerator {
             return avg_loss, accuracy, float(precision), float(recall), float(f1)
 
 
+        def run_detailed_test(model, dataset, criterion):
+            \"\"\"Detailed test with confusion matrix and per-category breakdown.\"\"\"
+            model.eval()
+
+            use_workers = DEVICE.type == "cuda"
+            loader_kwargs = dict(
+                num_workers=4 if use_workers else 0,
+                pin_memory=use_workers,
+                persistent_workers=use_workers,
+            )
+            loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, **loader_kwargs)
+
+            all_preds = []
+            all_labels = []
+
+            with torch.no_grad():
+                for left, right, labels in loader:
+                    left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
+                    outputs = model(left, right).squeeze()
+                    preds = (outputs > 0.0).float()
+                    all_preds.extend(preds.cpu().numpy())
+                    all_labels.extend(labels.cpu().numpy())
+
+            all_preds = np.array(all_preds)
+            all_labels = np.array(all_labels)
+
+            # Binary confusion matrix
+            tp = int(((all_preds == 1) & (all_labels == 1)).sum())
+            fp = int(((all_preds == 1) & (all_labels == 0)).sum())
+            fn = int(((all_preds == 0) & (all_labels == 1)).sum())
+            tn = int(((all_preds == 0) & (all_labels == 0)).sum())
+
+            confusion_matrix = {
+                "truePositives": tp,
+                "falsePositives": fp,
+                "falseNegatives": fn,
+                "trueNegatives": tn,
+            }
+
+            # Per-category breakdown (uses dataset.categories which parallels pairs order)
+            per_category = {}
+            for cat in sorted(set(dataset.categories)):
+                mask = np.array([c == cat for c in dataset.categories])
+                cat_preds = all_preds[mask]
+                total = int(len(cat_preds))
+                predicted_match = int((cat_preds == 1).sum())
+                per_category[cat] = {
+                    "total": total,
+                    "predictedMatch": predicted_match,
+                    "predictedNonMatch": total - predicted_match,
+                }
+
+            return confusion_matrix, per_category
+
+
         def main():
             # Transforms - augmentation for training only
             NORM_MEAN = [0.5, 0.5, 0.5]
@@ -299,11 +358,20 @@ enum TrainingScriptGenerator {
             model.load_state_dict(torch.load("best_model.pth", weights_only=True))
             test_loss, test_acc, test_prec, test_rec, test_f1 = run_validation(model, test_loader, criterion)
 
+            # Detailed test: confusion matrix + per-category breakdown
+            confusion_matrix, per_category = run_detailed_test(model, test_dataset, criterion)
+
             print(f"\\n{'='*60}")
             print(f"Training complete in {duration:.1f}s")
             print(f"Best epoch: {best_epoch}")
             print(f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.4f}")
             print(f"Precision: {test_prec:.4f} | Recall: {test_rec:.4f} | F1: {test_f1:.4f}")
+            print(f"\\nConfusion Matrix:")
+            print(f"  TP: {confusion_matrix['truePositives']}  FP: {confusion_matrix['falsePositives']}")
+            print(f"  FN: {confusion_matrix['falseNegatives']}  TN: {confusion_matrix['trueNegatives']}")
+            print(f"\\nPer-category results:")
+            for cat, res in per_category.items():
+                print(f"  {cat}: {res['predictedMatch']}/{res['total']} predicted match")
 
             # Save metrics
             metrics["testLoss"] = round(test_loss, 6)
@@ -313,6 +381,8 @@ enum TrainingScriptGenerator {
             metrics["testF1"] = round(test_f1, 6)
             metrics["trainingDurationSeconds"] = round(duration, 2)
             metrics["bestEpoch"] = best_epoch
+            metrics["confusionMatrix"] = confusion_matrix
+            metrics["perCategoryResults"] = per_category
 
             with open("metrics.json", "w") as f:
                 json.dump(metrics, f, indent=2)
