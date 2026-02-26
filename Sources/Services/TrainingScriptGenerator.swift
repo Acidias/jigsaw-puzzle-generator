@@ -199,17 +199,27 @@ enum TrainingScriptGenerator {
 
 
         def main():
-            # Transforms
-            transform = transforms.Compose([
+            # Transforms - augmentation for training only
+            NORM_MEAN = [0.5, 0.5, 0.5]
+            NORM_STD = [0.5, 0.5, 0.5]
+
+            train_transform = transforms.Compose([
+                transforms.Resize((INPUT_SIZE, INPUT_SIZE)),
+                transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
+                transforms.RandomGrayscale(p=0.1),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+            ])
+            eval_transform = transforms.Compose([
                 transforms.Resize((INPUT_SIZE, INPUT_SIZE)),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
             ])
 
             # Load datasets
-            train_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "train"), transform)
-            valid_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "valid"), transform)
-            test_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "test"), transform)
+            train_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "train"), train_transform)
+            valid_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "valid"), eval_transform)
+            test_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "test"), eval_transform)
 
             print(f"Train: {len(train_dataset)} pairs")
             print(f"Valid: {len(valid_dataset)} pairs")
@@ -234,7 +244,10 @@ enum TrainingScriptGenerator {
             # Weight positive class to compensate for 1:3 imbalance (25% match, 75% non-match)
             pos_weight = torch.tensor([3.0], device=DEVICE)
             criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-            optimiser = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+            optimiser = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimiser, mode="min", factor=0.5, patience=10
+            )
 
             print(f"\\nModel parameters: {sum(p.numel() for p in model.parameters()):,}")
             print(f"Training for {EPOCHS} epochs...\\n")
@@ -266,12 +279,19 @@ enum TrainingScriptGenerator {
                     best_epoch = epoch
                     torch.save(model.state_dict(), "best_model.pth")
 
+                # Step LR scheduler based on validation loss
+                old_lr = optimiser.param_groups[0]["lr"]
+                scheduler.step(valid_loss)
+                new_lr = optimiser.param_groups[0]["lr"]
+
                 print(
                     f"Epoch {epoch:3d}/{EPOCHS} | "
                     f"Train Loss: {train_loss:.4f} Acc: {train_acc:.4f} | "
                     f"Valid Loss: {valid_loss:.4f} Acc: {valid_acc:.4f}"
                     + (" *" if epoch == best_epoch else "")
                 )
+                if new_lr < old_lr:
+                    print(f"  >> LR reduced: {old_lr:.6f} -> {new_lr:.6f}")
 
             duration = time.time() - start_time
 
