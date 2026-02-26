@@ -238,6 +238,8 @@ enum CloudTrainingRunner {
                         Task { @MainActor in state.appendLog("[upload] \(line)") }
                     },
                     onStderrLine: { line in
+                        // Filter out macOS tar metadata warnings that flood the log
+                        if line.contains("LIBARCHIVE.xattr") || line.contains("Cannot change ownership") { return }
                         Task { @MainActor in state.appendLog("[upload] \(line)") }
                     }
                 )
