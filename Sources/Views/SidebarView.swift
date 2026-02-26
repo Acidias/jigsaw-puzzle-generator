@@ -354,19 +354,30 @@ struct SidebarView: View {
 
         let modelDir = ModelStore.modelDirectory(for: model.id)
         let fm = FileManager.default
-        let filesToExport = ["manifest.json", "metrics.json"]
 
         do {
             try fm.createDirectory(at: url, withIntermediateDirectories: true)
 
-            for filename in filesToExport {
-                let source = modelDir.appendingPathComponent(filename)
-                guard fm.fileExists(atPath: source.path) else { continue }
-                let dest = url.appendingPathComponent(filename)
-                if fm.fileExists(atPath: dest.path) {
-                    try fm.removeItem(at: dest)
+            // Build and write comprehensive training report
+            let report = buildTrainingReport(model: model)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let reportData = try encoder.encode(report)
+            let reportDest = url.appendingPathComponent("training_report.json")
+            if fm.fileExists(atPath: reportDest.path) {
+                try fm.removeItem(at: reportDest)
+            }
+            try reportData.write(to: reportDest)
+
+            // Copy raw metrics.json if present
+            let metricsSource = modelDir.appendingPathComponent("metrics.json")
+            if fm.fileExists(atPath: metricsSource.path) {
+                let metricsDest = url.appendingPathComponent("metrics.json")
+                if fm.fileExists(atPath: metricsDest.path) {
+                    try fm.removeItem(at: metricsDest)
                 }
-                try fm.copyItem(at: source, to: dest)
+                try fm.copyItem(at: metricsSource, to: metricsDest)
             }
 
             // Copy model.mlpackage directory if present
@@ -384,6 +395,106 @@ struct SidebarView: View {
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
+    }
+
+    // MARK: - Training Report
+
+    private func buildTrainingReport(model: SiameseModel) -> TrainingReport {
+        let dataset = datasetState.datasets.first { $0.id == model.sourceDatasetID }
+
+        let modelSection = TrainingReport.ModelSection(
+            id: model.id.uuidString,
+            name: model.name,
+            createdAt: model.createdAt,
+            status: model.status.rawValue
+        )
+
+        let arch = model.architecture
+        let archSection = TrainingReport.ArchitectureSection(
+            convBlocks: arch.convBlocks.map { block in
+                TrainingReport.ConvBlockInfo(
+                    filters: block.filters,
+                    kernelSize: block.kernelSize,
+                    useBatchNorm: block.useBatchNorm,
+                    useMaxPool: block.useMaxPool
+                )
+            },
+            embeddingDimension: arch.embeddingDimension,
+            comparisonMethod: arch.comparisonMethod.rawValue,
+            dropout: arch.dropout,
+            learningRate: arch.learningRate,
+            batchSize: arch.batchSize,
+            epochs: arch.epochs,
+            inputSize: arch.inputSize,
+            devicePreference: arch.devicePreference.rawValue,
+            flattenedSize: arch.flattenedSize
+        )
+
+        var datasetSection: TrainingReport.DatasetSection? = nil
+        if let ds = dataset {
+            let cfg = ds.configuration
+            var requestedCounts: [String: Int] = [:]
+            for cat in DatasetCategory.allCases {
+                requestedCounts[cat.rawValue] = cfg.count(for: cat)
+            }
+
+            var actualSplitCounts: [String: [String: Int]] = [:]
+            for (split, catCounts) in ds.splitCounts {
+                var catDict: [String: Int] = [:]
+                for (cat, count) in catCounts {
+                    catDict[cat.rawValue] = count
+                }
+                actualSplitCounts[split.rawValue] = catDict
+            }
+
+            datasetSection = TrainingReport.DatasetSection(
+                id: ds.id.uuidString,
+                name: ds.name,
+                sourceProjectName: ds.sourceProjectName,
+                rows: cfg.rows,
+                columns: cfg.columns,
+                pieceSize: cfg.pieceSize,
+                pieceFill: cfg.pieceFill.rawValue,
+                cutsPerImage: cfg.cutsPerImage,
+                trainRatio: cfg.trainRatio,
+                testRatio: cfg.testRatio,
+                validRatio: cfg.validRatio,
+                requestedCounts: requestedCounts,
+                actualSplitCounts: actualSplitCounts,
+                totalPairs: ds.totalPairs
+            )
+        }
+
+        var resultsSection: TrainingReport.ResultsSection? = nil
+        if let metrics = model.metrics {
+            let epochHistory = (0..<metrics.trainLoss.count).map { i in
+                TrainingReport.EpochEntry(
+                    epoch: metrics.trainLoss[i].epoch,
+                    trainLoss: metrics.trainLoss[i].value,
+                    validLoss: i < metrics.validLoss.count ? metrics.validLoss[i].value : nil,
+                    trainAccuracy: i < metrics.trainAccuracy.count ? metrics.trainAccuracy[i].value : nil,
+                    validAccuracy: i < metrics.validAccuracy.count ? metrics.validAccuracy[i].value : nil
+                )
+            }
+
+            resultsSection = TrainingReport.ResultsSection(
+                bestEpoch: metrics.bestEpoch,
+                trainingDurationSeconds: metrics.trainingDurationSeconds,
+                testAccuracy: metrics.testAccuracy,
+                testLoss: metrics.testLoss,
+                testPrecision: metrics.testPrecision,
+                testRecall: metrics.testRecall,
+                testF1: metrics.testF1,
+                epochHistory: epochHistory
+            )
+        }
+
+        return TrainingReport(
+            model: modelSection,
+            architecture: archSection,
+            dataset: datasetSection,
+            results: resultsSection
+        )
     }
 
     private func promptRenamePreset(_ preset: ArchitecturePreset) {
@@ -404,6 +515,80 @@ struct SidebarView: View {
                 ArchitecturePresetStore.savePreset(preset)
             }
         }
+    }
+}
+
+// MARK: - Training Report DTO
+
+/// Self-contained training report combining model, architecture, dataset, and results.
+/// Exported as training_report.json for external analysis.
+private struct TrainingReport: Codable {
+    let model: ModelSection
+    let architecture: ArchitectureSection
+    let dataset: DatasetSection?
+    let results: ResultsSection?
+
+    struct ModelSection: Codable {
+        let id: String
+        let name: String
+        let createdAt: Date
+        let status: String
+    }
+
+    struct ConvBlockInfo: Codable {
+        let filters: Int
+        let kernelSize: Int
+        let useBatchNorm: Bool
+        let useMaxPool: Bool
+    }
+
+    struct ArchitectureSection: Codable {
+        let convBlocks: [ConvBlockInfo]
+        let embeddingDimension: Int
+        let comparisonMethod: String
+        let dropout: Double
+        let learningRate: Double
+        let batchSize: Int
+        let epochs: Int
+        let inputSize: Int
+        let devicePreference: String
+        let flattenedSize: Int
+    }
+
+    struct DatasetSection: Codable {
+        let id: String
+        let name: String
+        let sourceProjectName: String
+        let rows: Int
+        let columns: Int
+        let pieceSize: Int
+        let pieceFill: String
+        let cutsPerImage: Int
+        let trainRatio: Double
+        let testRatio: Double
+        let validRatio: Double
+        let requestedCounts: [String: Int]
+        let actualSplitCounts: [String: [String: Int]]
+        let totalPairs: Int
+    }
+
+    struct EpochEntry: Codable {
+        let epoch: Int
+        let trainLoss: Double
+        let validLoss: Double?
+        let trainAccuracy: Double?
+        let validAccuracy: Double?
+    }
+
+    struct ResultsSection: Codable {
+        let bestEpoch: Int?
+        let trainingDurationSeconds: Double?
+        let testAccuracy: Double?
+        let testLoss: Double?
+        let testPrecision: Double?
+        let testRecall: Double?
+        let testF1: Double?
+        let epochHistory: [EpochEntry]
     }
 }
 
