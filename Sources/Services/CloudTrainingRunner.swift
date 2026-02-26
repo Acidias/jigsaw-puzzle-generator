@@ -224,10 +224,10 @@ enum CloudTrainingRunner {
                 )
 
                 // Build the tar|ssh pipeline as a shell command.
-                // COPYFILE_DISABLE=1 prevents macOS tar from including ._/xattr files.
+                // --no-mac-metadata strips Apple xattrs/resource forks from the archive.
                 // --no-same-owner prevents remote tar from trying to set macOS UIDs.
                 let sshCmd = "ssh -i \(config.resolvedKeyPath) -p \(config.port) -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
-                let tarPipeline = "tar cf - -C \"\(datasetDir.path)\" . | \(sshCmd) \(remote) \"tar xf - --no-same-owner -C \(remoteDatasetCache)\""
+                let tarPipeline = "tar cf - --no-mac-metadata -C \"\(datasetDir.path)\" . | \(sshCmd) \(remote) \"tar xf - --no-same-owner -C \(remoteDatasetCache)\""
 
                 let exitCode = try await runProcess(
                     executable: "/bin/sh",
