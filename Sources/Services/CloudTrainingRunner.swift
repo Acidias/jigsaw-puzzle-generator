@@ -207,19 +207,9 @@ enum CloudTrainingRunner {
                 state.appendLog("Uploading dataset to \(config.hostname)...")
             }
 
-            // Remove incomplete cache if it exists
-            do {
-                _ = try await runProcess(
-                    executable: "/usr/bin/ssh",
-                    arguments: sshFlags(config) + [remote, "rm -rf \(remoteDatasetCache)"],
-                    workingDirectory: nil,
-                    environment: [:],
-                    onStdoutLine: { _ in },
-                    onStderrLine: { _ in }
-                )
-            } catch {}
-
-            // Upload to datasets/<uuid>/ with periodic progress polling
+            // Upload using scp. No rm -rf before - scp overwrites existing files
+            // so retries after a dropped connection just re-send what's there
+            // and add missing files (better than starting from scratch).
             do {
                 _ = try await runProcess(
                     executable: "/usr/bin/ssh",
