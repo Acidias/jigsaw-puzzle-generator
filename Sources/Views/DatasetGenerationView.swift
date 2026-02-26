@@ -504,8 +504,9 @@ private struct DatasetRowView: View {
         panel.message = "Choose a folder to export the dataset"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let exportDir = url.appendingPathComponent(dataset.name.sanitisedForFilename())
         do {
-            try DatasetStore.exportDataset(dataset, to: url)
+            try DatasetStore.exportDataset(dataset, to: exportDir)
         } catch {
             let alert = NSAlert()
             alert.messageText = "Export Failed"
@@ -904,8 +905,9 @@ struct DatasetDetailView: View {
         panel.message = "Choose a folder to export the dataset"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let exportDir = url.appendingPathComponent(dataset.name.sanitisedForFilename())
         do {
-            try DatasetStore.exportDataset(dataset, to: url)
+            try DatasetStore.exportDataset(dataset, to: exportDir)
         } catch {
             let alert = NSAlert()
             alert.messageText = "Export Failed"

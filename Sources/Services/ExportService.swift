@@ -149,6 +149,17 @@ struct PuzzleMetadata: Codable {
     let attribution: ImageAttribution?
 }
 
+// MARK: - Filename Sanitisation
+
+extension String {
+    /// Replace characters unsafe for filenames with hyphens, collapse runs, and trim.
+    func sanitisedForFilename() -> String {
+        let cleaned = unicodeScalars.map { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" ? Character($0) : Character("-") }
+        let collapsed = String(cleaned).replacingOccurrences(of: "--+", with: "-", options: .regularExpression)
+        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+}
+
 struct PieceMetadata: Codable {
     let id: Int
     let type: String

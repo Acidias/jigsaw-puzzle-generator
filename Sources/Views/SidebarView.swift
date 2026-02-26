@@ -221,8 +221,9 @@ struct SidebarView: View {
         panel.message = "Choose a folder to export the dataset"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let exportDir = url.appendingPathComponent(dataset.name.sanitisedForFilename())
         do {
-            try DatasetStore.exportDataset(dataset, to: url)
+            try DatasetStore.exportDataset(dataset, to: exportDir)
         } catch {
             let alert = NSAlert()
             alert.messageText = "Export Failed"
@@ -327,11 +328,12 @@ struct SidebarView: View {
         panel.message = "Choose a folder to export the training package"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let exportDir = url.appendingPathComponent(model.name.sanitisedForFilename())
         do {
             try TrainingScriptGenerator.exportTrainingPackage(
                 model: model,
                 dataset: dataset,
-                to: url
+                to: exportDir
             )
             model.status = .exported
             ModelStore.saveModel(model)
@@ -352,11 +354,12 @@ struct SidebarView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        let exportDir = url.appendingPathComponent(model.name.sanitisedForFilename())
         let modelDir = ModelStore.modelDirectory(for: model.id)
         let fm = FileManager.default
 
         do {
-            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            try fm.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
             // Build and write comprehensive training report
             let report = buildTrainingReport(model: model)
@@ -364,7 +367,7 @@ struct SidebarView: View {
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let reportData = try encoder.encode(report)
-            let reportDest = url.appendingPathComponent("training_report.json")
+            let reportDest = exportDir.appendingPathComponent("training_report.json")
             if fm.fileExists(atPath: reportDest.path) {
                 try fm.removeItem(at: reportDest)
             }
@@ -373,7 +376,7 @@ struct SidebarView: View {
             // Copy raw metrics.json if present
             let metricsSource = modelDir.appendingPathComponent("metrics.json")
             if fm.fileExists(atPath: metricsSource.path) {
-                let metricsDest = url.appendingPathComponent("metrics.json")
+                let metricsDest = exportDir.appendingPathComponent("metrics.json")
                 if fm.fileExists(atPath: metricsDest.path) {
                     try fm.removeItem(at: metricsDest)
                 }
@@ -383,7 +386,7 @@ struct SidebarView: View {
             // Copy model.mlpackage directory if present
             let mlpackageSource = ModelStore.coreMLModelPath(for: model.id)
             if fm.fileExists(atPath: mlpackageSource.path) {
-                let mlpackageDest = url.appendingPathComponent("model.mlpackage")
+                let mlpackageDest = exportDir.appendingPathComponent("model.mlpackage")
                 if fm.fileExists(atPath: mlpackageDest.path) {
                     try fm.removeItem(at: mlpackageDest)
                 }
