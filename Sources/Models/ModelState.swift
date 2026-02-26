@@ -5,8 +5,10 @@ enum TrainingStatus: Equatable {
     case idle
     case preparingEnvironment
     case installingDependencies
+    case uploadingDataset
     case training(epoch: Int, totalEpochs: Int)
     case importingResults
+    case downloadingResults
     case completed
     case failed(reason: String)
     case cancelled
@@ -24,6 +26,10 @@ class ModelState: ObservableObject {
     @Published var trainingLog: [String] = []
     @Published var liveMetrics: TrainingMetrics?
     @Published var pythonAvailable: Bool?
+
+    // Training target (local vs cloud)
+    @Published var trainingTarget: TrainingTarget = .local
+    @Published var cloudConfig: CloudConfig = CloudConfigStore.load()
 
     var selectedModel: SiameseModel? {
         guard let id = selectedModelID else { return nil }

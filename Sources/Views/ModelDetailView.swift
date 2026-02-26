@@ -8,6 +8,9 @@ struct ModelDetailView: View {
     @ObservedObject var modelState: ModelState
     @ObservedObject var datasetState: DatasetState
 
+    @State private var connectionTestResult: String?
+    @State private var isTestingConnection = false
+
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .long
@@ -148,9 +151,23 @@ struct ModelDetailView: View {
 
     private var idleTrainingView: some View {
         VStack(spacing: 8) {
-            Text("Run training directly from the app. Requires Python 3 with PyTorch.")
+            Text("Run training directly from the app or on a remote GPU via SSH.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+
+            // Training target picker
+            Picker("Target:", selection: $modelState.trainingTarget) {
+                ForEach(TrainingTarget.allCases, id: \.rawValue) { target in
+                    Label(target.displayName, systemImage: target.icon).tag(target)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 300)
+
+            // Cloud config form (inline)
+            if modelState.trainingTarget == .cloud {
+                cloudConfigForm
+            }
 
             Button {
                 startTraining()
@@ -159,13 +176,21 @@ struct ModelDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.green)
-            .disabled(modelState.pythonAvailable == false || modelState.isTraining)
+            .disabled(!canStartTraining || modelState.isTraining)
 
-            if modelState.pythonAvailable == false {
-                Label("python3 not found on this system", systemImage: "exclamationmark.triangle.fill")
+            if modelState.trainingTarget == .local {
+                if modelState.pythonAvailable == false {
+                    Label("python3 not found on this system", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            } else if !modelState.cloudConfig.isValid {
+                Label("Enter a valid hostname and SSH key path", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
-            } else if modelState.isTraining {
+            }
+
+            if modelState.isTraining {
                 Text("Another model is currently training")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -178,14 +203,141 @@ struct ModelDetailView: View {
         }
     }
 
+    private var canStartTraining: Bool {
+        if modelState.trainingTarget == .local {
+            return modelState.pythonAvailable != false
+        } else {
+            return modelState.cloudConfig.isValid
+        }
+    }
+
+    private var cloudConfigForm: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Host:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("192.168.1.100 or hostname", text: $modelState.cloudConfig.hostname)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: modelState.cloudConfig.hostname) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                        connectionTestResult = nil
+                    }
+            }
+            HStack {
+                Text("User:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("root", text: $modelState.cloudConfig.username)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 150)
+                    .onChange(of: modelState.cloudConfig.username) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                    }
+                Text("Port:")
+                    .font(.callout)
+                TextField("22", value: $modelState.cloudConfig.port, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    .onChange(of: modelState.cloudConfig.port) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                    }
+            }
+            HStack {
+                Text("Key:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("~/.ssh/id_rsa", text: $modelState.cloudConfig.sshKeyPath)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: modelState.cloudConfig.sshKeyPath) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                        connectionTestResult = nil
+                    }
+                Button("Browse...") {
+                    browseSSHKey()
+                }
+                .controlSize(.small)
+            }
+            HStack {
+                Text("Dir:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("/root/training", text: $modelState.cloudConfig.remoteWorkDir)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: modelState.cloudConfig.remoteWorkDir) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                    }
+            }
+
+            // Test connection button
+            HStack {
+                Button {
+                    testConnection()
+                } label: {
+                    Label("Test Connection", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isTestingConnection || !modelState.cloudConfig.isValid)
+
+                if isTestingConnection {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                if let result = connectionTestResult {
+                    Text(result)
+                        .font(.caption)
+                        .foregroundStyle(result.contains("successful") ? .green : .red)
+                }
+            }
+        }
+        .padding(8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func browseSSHKey() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL(fileURLWithPath: NSString(string: "~/.ssh").expandingTildeInPath)
+        panel.message = "Select your SSH private key"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        modelState.cloudConfig.sshKeyPath = url.path
+        CloudConfigStore.save(modelState.cloudConfig)
+        connectionTestResult = nil
+    }
+
+    private func testConnection() {
+        isTestingConnection = true
+        connectionTestResult = nil
+        let config = modelState.cloudConfig
+        Task {
+            let (success, message) = await CloudTrainingRunner.testConnection(config: config)
+            await MainActor.run {
+                connectionTestResult = message
+                isTestingConnection = false
+                _ = success
+            }
+        }
+    }
+
     private var activeTrainingView: some View {
         VStack(spacing: 12) {
             // Status label
             HStack {
                 trainingStatusLabel
                 Spacer()
+                if modelState.trainingTarget == .cloud {
+                    Label(modelState.cloudConfig.hostname, systemImage: "cloud")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button(role: .destructive) {
-                    TrainingRunner.cancel(state: modelState)
+                    cancelTraining()
                 } label: {
                     Label("Cancel", systemImage: "stop.fill")
                 }
@@ -219,11 +371,17 @@ struct ModelDetailView: View {
         case .installingDependencies:
             Label("Installing dependencies...", systemImage: "arrow.down.circle")
                 .foregroundStyle(.secondary)
+        case .uploadingDataset:
+            Label("Uploading dataset...", systemImage: "arrow.up.circle")
+                .foregroundStyle(.secondary)
         case .training(let epoch, let total):
             Label("Training \(epoch)/\(total)", systemImage: "play.circle.fill")
                 .foregroundStyle(.yellow)
         case .importingResults:
             Label("Importing results...", systemImage: "arrow.down.doc")
+                .foregroundStyle(.secondary)
+        case .downloadingResults:
+            Label("Downloading results...", systemImage: "arrow.down.circle")
                 .foregroundStyle(.secondary)
         default:
             EmptyView()
@@ -284,7 +442,7 @@ struct ModelDetailView: View {
                 Label("Retrain", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.bordered)
-            .disabled(modelState.pythonAvailable == false || modelState.isTraining)
+            .disabled(!canStartTraining || modelState.isTraining)
         }
     }
 
@@ -322,7 +480,22 @@ struct ModelDetailView: View {
         }
 
         Task {
-            await TrainingRunner.train(model: model, dataset: dataset, state: modelState)
+            if modelState.trainingTarget == .cloud {
+                await CloudTrainingRunner.train(
+                    model: model, dataset: dataset,
+                    config: modelState.cloudConfig, state: modelState
+                )
+            } else {
+                await TrainingRunner.train(model: model, dataset: dataset, state: modelState)
+            }
+        }
+    }
+
+    private func cancelTraining() {
+        if modelState.trainingTarget == .cloud {
+            CloudTrainingRunner.cancel(state: modelState)
+        } else {
+            TrainingRunner.cancel(state: modelState)
         }
     }
 

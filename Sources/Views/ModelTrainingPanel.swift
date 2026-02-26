@@ -9,6 +9,8 @@ struct ModelTrainingPanel: View {
     @State private var architecture = SiameseArchitecture()
     @State private var selectedDatasetID: UUID?
     @State private var modelName = ""
+    @State private var connectionTestResult: String?
+    @State private var isTestingConnection = false
 
     var body: some View {
         ScrollView {
@@ -45,6 +47,9 @@ struct ModelTrainingPanel: View {
                 // Hyperparameters
                 hyperparametersSection
 
+                // Training target
+                trainingTargetSection
+
                 // Model summary
                 summarySection
 
@@ -69,7 +74,11 @@ struct ModelTrainingPanel: View {
     }
 
     private var canTrain: Bool {
-        canCreate && modelState.pythonAvailable == true && !modelState.isTraining
+        guard canCreate && !modelState.isTraining else { return false }
+        if modelState.trainingTarget == .cloud {
+            return modelState.cloudConfig.isValid
+        }
+        return modelState.pythonAvailable == true
     }
 
     // MARK: - Sections
@@ -298,6 +307,142 @@ struct ModelTrainingPanel: View {
         }
     }
 
+    private var trainingTargetSection: some View {
+        GroupBox("Training Target") {
+            VStack(spacing: 8) {
+                Picker("Target:", selection: $modelState.trainingTarget) {
+                    ForEach(TrainingTarget.allCases, id: \.rawValue) { target in
+                        Label(target.displayName, systemImage: target.icon).tag(target)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: modelState.trainingTarget) { _, newValue in
+                    if newValue == .cloud {
+                        architecture.devicePreference = .cuda
+                    }
+                }
+
+                if modelState.trainingTarget == .cloud {
+                    panelCloudConfigForm
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private var panelCloudConfigForm: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Host:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("192.168.1.100 or hostname", text: $modelState.cloudConfig.hostname)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: modelState.cloudConfig.hostname) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                        connectionTestResult = nil
+                    }
+            }
+            HStack {
+                Text("User:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("root", text: $modelState.cloudConfig.username)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 150)
+                    .onChange(of: modelState.cloudConfig.username) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                    }
+                Text("Port:")
+                    .font(.callout)
+                TextField("22", value: $modelState.cloudConfig.port, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    .onChange(of: modelState.cloudConfig.port) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                    }
+            }
+            HStack {
+                Text("Key:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("~/.ssh/id_rsa", text: $modelState.cloudConfig.sshKeyPath)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: modelState.cloudConfig.sshKeyPath) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                        connectionTestResult = nil
+                    }
+                Button("Browse...") {
+                    browseSSHKey()
+                }
+                .controlSize(.small)
+            }
+            HStack {
+                Text("Dir:")
+                    .font(.callout)
+                    .frame(width: 60, alignment: .trailing)
+                TextField("/root/training", text: $modelState.cloudConfig.remoteWorkDir)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: modelState.cloudConfig.remoteWorkDir) { _, _ in
+                        CloudConfigStore.save(modelState.cloudConfig)
+                    }
+            }
+
+            HStack {
+                Button {
+                    testConnection()
+                } label: {
+                    Label("Test Connection", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isTestingConnection || !modelState.cloudConfig.isValid)
+
+                if isTestingConnection {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                if let result = connectionTestResult {
+                    Text(result)
+                        .font(.caption)
+                        .foregroundStyle(result.contains("successful") ? .green : .red)
+                }
+            }
+        }
+        .padding(8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func browseSSHKey() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL(fileURLWithPath: NSString(string: "~/.ssh").expandingTildeInPath)
+        panel.message = "Select your SSH private key"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        modelState.cloudConfig.sshKeyPath = url.path
+        CloudConfigStore.save(modelState.cloudConfig)
+        connectionTestResult = nil
+    }
+
+    private func testConnection() {
+        isTestingConnection = true
+        connectionTestResult = nil
+        let config = modelState.cloudConfig
+        Task {
+            let (success, message) = await CloudTrainingRunner.testConnection(config: config)
+            await MainActor.run {
+                connectionTestResult = message
+                isTestingConnection = false
+                _ = success
+            }
+        }
+    }
+
     private var actionSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -342,8 +487,12 @@ struct ModelTrainingPanel: View {
                 }
             }
 
-            if modelState.pythonAvailable == false {
+            if modelState.trainingTarget == .local && modelState.pythonAvailable == false {
                 Label("python3 not found - install Python to enable in-app training", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if modelState.trainingTarget == .cloud && !modelState.cloudConfig.isValid {
+                Label("Configure SSH connection above to enable cloud training", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -384,7 +533,14 @@ struct ModelTrainingPanel: View {
             // Navigate to the model detail view, then start training
             selection = .model(model.id)
             Task {
-                await TrainingRunner.train(model: model, dataset: dataset, state: modelState)
+                if modelState.trainingTarget == .cloud {
+                    await CloudTrainingRunner.train(
+                        model: model, dataset: dataset,
+                        config: modelState.cloudConfig, state: modelState
+                    )
+                } else {
+                    await TrainingRunner.train(model: model, dataset: dataset, state: modelState)
+                }
             }
         }
     }

@@ -431,7 +431,7 @@ enum TrainingRunner {
 
 /// Accumulates data and emits complete lines (split on newline).
 /// Used to handle partial reads from Pipe.
-private final class LineBuffer: @unchecked Sendable {
+final class LineBuffer: @unchecked Sendable {
     private var buffer = Data()
     private let handler: (String) -> Void
 
