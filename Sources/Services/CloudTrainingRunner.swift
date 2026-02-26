@@ -193,8 +193,8 @@ enum CloudTrainingRunner {
                 onStderrLine: { _ in }
             )
             let remoteCountStr = captured.value
-            if exitCode == 0, let remoteCount = Int(remoteCountStr), remoteCount == localFileCount {
-                state.appendLog("Dataset already cached on remote (\(remoteCount) files match) - skipping upload")
+            if exitCode == 0, let remoteCount = Int(remoteCountStr), remoteCount >= localFileCount {
+                state.appendLog("Dataset already cached on remote (\(remoteCount) files) - skipping upload")
                 datasetNeedsUpload = false
             } else {
                 let count = Int(remoteCountStr) ?? 0
