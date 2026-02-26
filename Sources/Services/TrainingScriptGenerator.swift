@@ -151,7 +151,7 @@ enum TrainingScriptGenerator {
                 optimiser.step()
 
                 total_loss += loss.item() * labels.size(0)
-                preds = (outputs > 0.5).float()
+                preds = (outputs > 0.0).float()
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
 
@@ -174,7 +174,7 @@ enum TrainingScriptGenerator {
                     loss = criterion(outputs, labels)
 
                     total_loss += loss.item() * labels.size(0)
-                    preds = (outputs > 0.5).float()
+                    preds = (outputs > 0.0).float()
                     correct += (preds == labels).sum().item()
                     total += labels.size(0)
 
@@ -230,7 +230,9 @@ enum TrainingScriptGenerator {
 
             # Model
             model = SiameseNetwork().to(DEVICE)
-            criterion = nn.BCELoss()
+            # Weight positive class to compensate for 1:3 imbalance (25% match, 75% non-match)
+            pos_weight = torch.tensor([3.0], device=DEVICE)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
             optimiser = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
             print(f"\\nModel parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -412,18 +414,17 @@ enum TrainingScriptGenerator {
         switch method {
         case .l1Distance, .l2Distance:
             return """
-                    # Classification head
+                    # Classification head (outputs raw logits for BCEWithLogitsLoss)
                     self.classifier = nn.Sequential(
                         nn.Linear(EMBEDDING_DIM, 64),
                         nn.ReLU(),
                         nn.Dropout(DROPOUT),
                         nn.Linear(64, 1),
-                        nn.Sigmoid(),
                     )
             """
         case .concatenation:
             return """
-                    # Classification head (concatenated embeddings)
+                    # Classification head (outputs raw logits for BCEWithLogitsLoss)
                     self.classifier = nn.Sequential(
                         nn.Linear(EMBEDDING_DIM * 2, 128),
                         nn.ReLU(),
@@ -431,7 +432,6 @@ enum TrainingScriptGenerator {
                         nn.Linear(128, 64),
                         nn.ReLU(),
                         nn.Linear(64, 1),
-                        nn.Sigmoid(),
                     )
             """
         }
