@@ -312,6 +312,23 @@ enum TrainingScriptGenerator {
             return best_threshold, best_f1
 
 
+        class CrispAlphaResize:
+            \"\"\"Resize RGBA images with bilinear for RGB and nearest-neighbour for alpha.
+            Prevents the alpha silhouette (piece geometry cue) from getting blurred
+            during upscaling, while keeping smooth image content.\"\"\"
+
+            def __init__(self, size):
+                self.size = (size, size) if isinstance(size, int) else size
+
+            def __call__(self, img):
+                r, g, b, a = img.split()
+                rgb = Image.merge("RGB", (r, g, b))
+                rgb = rgb.resize(self.size, Image.BILINEAR)
+                a = a.resize(self.size, Image.NEAREST)
+                r2, g2, b2 = rgb.split()
+                return Image.merge("RGBA", (r2, g2, b2, a))
+
+
         class PairConsistentRGBAAugment:
             \"\"\"Sample colour-jitter and grayscale params once, apply identically to both pieces.
             Preserves alpha channel (piece silhouette). This teaches the model that true
@@ -360,12 +377,12 @@ enum TrainingScriptGenerator {
                 brightness=0.3, contrast=0.3, saturation=0.2, grayscale_p=0.1,
             )
             base_transform = transforms.Compose([
-                transforms.Resize((INPUT_SIZE, INPUT_SIZE)),
+                CrispAlphaResize(INPUT_SIZE),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
             ])
             eval_transform = transforms.Compose([
-                transforms.Resize((INPUT_SIZE, INPUT_SIZE)),
+                CrispAlphaResize(INPUT_SIZE),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
             ])
