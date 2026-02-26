@@ -318,7 +318,7 @@ struct ModelTrainingPanel: View {
                 .pickerStyle(.segmented)
                 .onChange(of: modelState.trainingTarget) { _, newValue in
                     if newValue == .cloud {
-                        architecture.devicePreference = .cuda
+                        architecture.devicePreference = .auto
                     }
                 }
 

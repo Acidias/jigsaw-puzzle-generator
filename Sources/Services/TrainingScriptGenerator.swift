@@ -441,10 +441,10 @@ enum TrainingScriptGenerator {
         switch preference {
         case .auto:
             return """
-            if torch.backends.mps.is_available():
-                DEVICE = torch.device("mps")
-            elif torch.cuda.is_available():
+            if torch.cuda.is_available():
                 DEVICE = torch.device("cuda")
+            elif torch.backends.mps.is_available():
+                DEVICE = torch.device("mps")
             else:
                 DEVICE = torch.device("cpu")
             print(f"Using device: {DEVICE}")

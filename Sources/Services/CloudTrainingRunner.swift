@@ -89,14 +89,14 @@ enum CloudTrainingRunner {
 
         // Write train.py + requirements.txt locally to a temp dir
         // Dataset path is relative (./dataset) since we upload it alongside the script
+        // Device preference is always auto for cloud - checks CUDA first, then MPS, then CPU
         let tempDir: URL
         do {
             tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("cloud_training_\(model.id.uuidString)")
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-            // Force CUDA device for cloud training
             var cloudArch = model.architecture
-            cloudArch.devicePreference = .cuda
+            cloudArch.devicePreference = .auto
             let cloudModel = SiameseModel(
                 id: model.id,
                 name: model.name,
@@ -226,7 +226,15 @@ enum CloudTrainingRunner {
         }
 
         let totalEpochs = model.architecture.epochs
-        let remoteCommand = "cd \(remoteDir) && pip install -r requirements.txt && PYTHONUNBUFFERED=1 python train.py"
+        // Smart pip install: if CUDA PyTorch is already available (common on cloud GPU providers),
+        // only install non-torch deps to avoid overwriting it with a CPU-only version.
+        // Otherwise, install everything using the PyTorch CUDA index URL.
+        let pipCommand = """
+            python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null && \
+            pip install pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2 || \
+            pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu124
+            """
+        let remoteCommand = "cd \(remoteDir) && \(pipCommand) && PYTHONUNBUFFERED=1 python train.py"
 
         do {
             let exitCode = try await runProcess(
