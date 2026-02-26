@@ -2,7 +2,7 @@ import Charts
 import SwiftUI
 
 /// Detail view for a persisted SiameseModel.
-/// Shows architecture summary, export/import actions, and training metric charts.
+/// Shows architecture summary, training controls, and metric charts.
 struct ModelDetailView: View {
     @ObservedObject var model: SiameseModel
     @ObservedObject var modelState: ModelState
@@ -25,8 +25,6 @@ struct ModelDetailView: View {
                 headerSection
                 architectureSection
                 trainingSection
-                exportSection
-                importSection
 
                 if let metrics = activeMetrics {
                     metricsCharts(metrics)
@@ -535,61 +533,6 @@ struct ModelDetailView: View {
         }
     }
 
-    // MARK: - Export
-
-    private var exportSection: some View {
-        GroupBox("Export") {
-            VStack(spacing: 8) {
-                Text("Export a self-contained PyTorch training package with the dataset and training script.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    exportTrainingPackage()
-                } label: {
-                    Label("Export Training Package...", systemImage: "square.and.arrow.up")
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding(8)
-        }
-    }
-
-    // MARK: - Import
-
-    private var importSection: some View {
-        GroupBox("Import Results") {
-            VStack(spacing: 8) {
-                Text("After training, import the generated metrics.json and optionally the Core ML model.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 12) {
-                    Button {
-                        importMetrics()
-                    } label: {
-                        Label("Import metrics.json...", systemImage: "chart.line.uptrend.xyaxis")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        importCoreMLModel()
-                    } label: {
-                        Label("Import .mlpackage...", systemImage: "cpu")
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-                if model.hasImportedModel {
-                    Label("Core ML model imported", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                }
-            }
-            .padding(8)
-        }
-    }
-
     // MARK: - Metrics Charts
 
     @ViewBuilder
@@ -748,81 +691,4 @@ struct ModelDetailView: View {
         }
     }
 
-    // MARK: - Import/Export Actions
-
-    private func exportTrainingPackage() {
-        guard let dataset = datasetState.datasets.first(where: { $0.id == model.sourceDatasetID }) else {
-            let alert = NSAlert()
-            alert.messageText = "Dataset Not Found"
-            alert.informativeText = "The source dataset (\(model.sourceDatasetName)) could not be found. It may have been deleted."
-            alert.runModal()
-            return
-        }
-
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.message = "Choose a folder to export the training package"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try TrainingScriptGenerator.exportTrainingPackage(
-                model: model,
-                dataset: dataset,
-                to: url
-            )
-            model.status = .exported
-            ModelStore.saveModel(model)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Export Failed"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-        }
-    }
-
-    private func importMetrics() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.message = "Select the metrics.json file from training"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            let data = try Data(contentsOf: url)
-            let metrics = try JSONDecoder().decode(TrainingMetrics.self, from: data)
-            model.metrics = metrics
-            model.status = .trained
-            ModelStore.saveModel(model)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Import Failed"
-            alert.informativeText = "Could not parse metrics.json: \(error.localizedDescription)"
-            alert.runModal()
-        }
-    }
-
-    private func importCoreMLModel() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = false
-        panel.message = "Select the model.mlpackage directory"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            try ModelStore.importCoreMLModel(from: url, for: model.id)
-            model.hasImportedModel = true
-            ModelStore.saveModel(model)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Import Failed"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-        }
-    }
 }
