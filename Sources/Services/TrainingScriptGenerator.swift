@@ -59,8 +59,8 @@ enum TrainingScriptGenerator {
                 else:
                     df = pd.read_csv(labels_path)
                     for _, row in df.iterrows():
-                        left_path = os.path.join(split_dir, row["left_path"])
-                        right_path = os.path.join(split_dir, row["right_path"])
+                        left_path = os.path.join(split_dir, row["left_file"])
+                        right_path = os.path.join(split_dir, row["right_file"])
                         label = int(row["label"])
                         if os.path.exists(left_path) and os.path.exists(right_path):
                             self.pairs.append((left_path, right_path, label))
