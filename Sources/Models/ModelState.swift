@@ -76,6 +76,10 @@ class ModelState: ObservableObject {
         ModelStore.saveModel(model)
     }
 
+    func updateModel(_ model: SiameseModel) {
+        ModelStore.saveModel(model)
+    }
+
     func deleteModel(_ model: SiameseModel) {
         ModelStore.deleteModel(id: model.id)
         models.removeAll { $0.id == model.id }

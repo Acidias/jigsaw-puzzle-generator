@@ -16,7 +16,7 @@ class SiameseModel: ObservableObject, Identifiable {
     @Published var name: String
     let sourceDatasetID: UUID
     let sourceDatasetName: String
-    var architecture: SiameseArchitecture
+    @Published var architecture: SiameseArchitecture
     let createdAt: Date
     @Published var status: ModelStatus
     @Published var metrics: TrainingMetrics?

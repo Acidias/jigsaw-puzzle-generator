@@ -31,7 +31,7 @@ Native macOS app (Swift + SwiftUI) that generates jigsaw puzzle pieces from imag
   - `CloudConfig` - SSH connection config (hostname, username, key path, port, remote work dir) + `CloudConfigStore` for persistence
   - `ImageAttribution` - Openverse licence/creator info
   - `ProjectManifest` - Codable DTOs for JSON persistence (ProjectManifest, ImageManifest, CutManifest, CutImageResultManifest, PieceManifest)
-- `Sources/Views/` - SwiftUI views (four-level sidebar tree, project/cut/cutImage/piece detail, config panel, puzzle overlay, batch processing, Openverse search, dataset generation, model training/detail with Charts)
+- `Sources/Views/` - SwiftUI views (four-level sidebar tree, project/cut/cutImage/piece detail, config panel, puzzle overlay, batch processing, Openverse search, dataset generation, model training/detail with Charts, ArchitectureEditorView reusable component)
 - `Sources/Services/`
   - `PuzzleGenerator` - Orchestrates native puzzle generation, returns Result<GenerationResult, GenerationError>. Accepts optional `gridEdges:` to reuse shared edges across images.
   - `DatasetGenerator` - Generates structured ML training datasets from 2-piece puzzles (4 categories, train/test/valid splits), persists to internal storage

@@ -10,6 +10,7 @@ struct ModelDetailView: View {
 
     @State private var connectionTestResult: String?
     @State private var isTestingConnection = false
+    @State private var isEditingArchitecture = false
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -104,29 +105,64 @@ struct ModelDetailView: View {
     // MARK: - Architecture
 
     private var architectureSection: some View {
-        GroupBox("Architecture") {
+        GroupBox {
             VStack(spacing: 8) {
-                // Read-only compact diagram
-                NetworkDiagramView(architecture: .constant(model.architecture))
-                    .scaleEffect(0.85)
-                    .frame(maxHeight: 300)
+                // Header with edit toggle
+                HStack {
+                    Label("Architecture", systemImage: "cpu")
+                        .font(.headline)
+                    Spacer()
+                    if !isTrainingThisModel {
+                        Button {
+                            isEditingArchitecture.toggle()
+                        } label: {
+                            Label(
+                                isEditingArchitecture ? "Done" : "Edit",
+                                systemImage: isEditingArchitecture ? "checkmark.circle" : "pencil"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
 
-                Divider()
+                if isEditingArchitecture {
+                    ArchitectureEditorView(architecture: $model.architecture)
+                        .onChange(of: model.architecture) { _, _ in
+                            handleArchitectureChange()
+                        }
+                } else {
+                    // Read-only compact view
+                    NetworkDiagramView(architecture: .constant(model.architecture))
+                        .scaleEffect(0.85)
+                        .frame(maxHeight: 300)
 
-                VStack(spacing: 4) {
-                    configRow("Input size", "\(model.architecture.inputSize) x \(model.architecture.inputSize)")
-                    configRow("Conv blocks", "\(model.architecture.convBlocks.count)")
-                    configRow("Embedding", "\(model.architecture.embeddingDimension)-d")
-                    configRow("Comparison", model.architecture.comparisonMethod.displayName)
-                    configRow("Dropout", String(format: "%.2f", model.architecture.dropout))
                     Divider()
-                    configRow("Learning rate", "\(model.architecture.learningRate)")
-                    configRow("Batch size", "\(model.architecture.batchSize)")
-                    configRow("Epochs", "\(model.architecture.epochs)")
+
+                    VStack(spacing: 4) {
+                        configRow("Input size", "\(model.architecture.inputSize) x \(model.architecture.inputSize)")
+                        configRow("Conv blocks", "\(model.architecture.convBlocks.count)")
+                        configRow("Embedding", "\(model.architecture.embeddingDimension)-d")
+                        configRow("Comparison", model.architecture.comparisonMethod.displayName)
+                        configRow("Dropout", String(format: "%.2f", model.architecture.dropout))
+                        Divider()
+                        configRow("Learning rate", "\(model.architecture.learningRate)")
+                        configRow("Batch size", "\(model.architecture.batchSize)")
+                        configRow("Epochs", "\(model.architecture.epochs)")
+                    }
                 }
             }
             .padding(8)
         }
+    }
+
+    private func handleArchitectureChange() {
+        // Architecture change invalidates previous training results
+        if model.status == .trained || model.status == .exported {
+            model.metrics = nil
+            model.status = .designed
+        }
+        modelState.updateModel(model)
     }
 
     // MARK: - Training
