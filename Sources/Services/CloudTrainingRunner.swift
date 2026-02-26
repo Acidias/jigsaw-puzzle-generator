@@ -210,9 +210,9 @@ enum CloudTrainingRunner {
                 state.appendLog("Uploading dataset to \(config.hostname)...")
             }
 
-            // Upload using scp. No rm -rf before - scp overwrites existing files
-            // so retries after a dropped connection just re-send what's there
-            // and add missing files (better than starting from scratch).
+            // Upload using tar piped through SSH - sends all files in a single stream,
+            // much faster than scp -r which opens a transfer per file.
+            // tar cf - creates archive to stdout, ssh pipes it to tar xf - on remote.
             do {
                 _ = try await runProcess(
                     executable: "/usr/bin/ssh",
@@ -223,47 +223,24 @@ enum CloudTrainingRunner {
                     onStderrLine: { _ in }
                 )
 
-                // Start progress monitor that polls remote file count every 15 seconds
-                let progressTask = Task {
-                    let sshFlagsForPoll = sshFlags(config)
-                    let pollTarget = remoteTarget(config)
-                    while !Task.isCancelled {
-                        try await Task.sleep(nanoseconds: 15_000_000_000)
-                        guard !Task.isCancelled else { break }
-                        let captured = CapturedLine()
-                        let _ = try? await runProcess(
-                            executable: "/usr/bin/ssh",
-                            arguments: sshFlagsForPoll + [pollTarget, "find \(remoteDatasetCache) -type f | wc -l"],
-                            workingDirectory: nil,
-                            environment: [:],
-                            onStdoutLine: { line in
-                                captured.value = line.trimmingCharacters(in: .whitespaces)
-                            },
-                            onStderrLine: { _ in }
-                        )
-                        if let count = Int(captured.value), count > 0 {
-                            let pct = localFileCount > 0 ? Int(Double(count) / Double(localFileCount) * 100) : 0
-                            await MainActor.run {
-                                state.appendLog("Upload progress: \(count)/\(localFileCount) files (\(pct)%)")
-                            }
-                        }
-                    }
-                }
+                // Build the tar|ssh pipeline as a shell command.
+                // COPYFILE_DISABLE=1 prevents macOS tar from including ._/xattr files.
+                // --no-same-owner prevents remote tar from trying to set macOS UIDs.
+                let sshCmd = "ssh -i \(config.resolvedKeyPath) -p \(config.port) -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+                let tarPipeline = "tar cf - -C \"\(datasetDir.path)\" . | \(sshCmd) \(remote) \"tar xf - --no-same-owner -C \(remoteDatasetCache)\""
 
                 let exitCode = try await runProcess(
-                    executable: "/usr/bin/scp",
-                    arguments: scpFlags(config) + ["-r", datasetDir.path + "/.", "\(remote):\(remoteDatasetCache)/"],
+                    executable: "/bin/sh",
+                    arguments: ["-c", tarPipeline],
                     workingDirectory: nil,
-                    environment: [:],
+                    environment: ["COPYFILE_DISABLE": "1"],
                     onStdoutLine: { line in
-                        Task { @MainActor in state.appendLog("[scp] \(line)") }
+                        Task { @MainActor in state.appendLog("[upload] \(line)") }
                     },
                     onStderrLine: { line in
-                        Task { @MainActor in state.appendLog("[scp] \(line)") }
+                        Task { @MainActor in state.appendLog("[upload] \(line)") }
                     }
                 )
-
-                progressTask.cancel()
 
                 if exitCode != 0 {
                     await handleFailure(reason: "Dataset upload failed (exit code \(exitCode))", model: model, state: state)
