@@ -234,7 +234,8 @@ enum ModelStore {
                 optimalThreshold: metrics.optimalThreshold,
                 confusionMatrix: metrics.confusionMatrix,
                 perCategoryResults: metrics.perCategoryResults,
-                epochHistory: epochHistory
+                epochHistory: epochHistory,
+                standardisedResults: metrics.standardisedResults
             )
         }
 
@@ -352,6 +353,7 @@ struct TrainingReport: Codable {
         let confusionMatrix: ConfusionMatrix?
         let perCategoryResults: [String: CategoryResult]?
         let epochHistory: [EpochEntry]
+        let standardisedResults: [StandardisedResult]?
     }
 }
 

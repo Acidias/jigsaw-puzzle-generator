@@ -721,6 +721,66 @@ struct ModelDetailView: View {
             if let perCategory = metrics.perCategoryResults, !perCategory.isEmpty {
                 perCategoryView(perCategory)
             }
+
+            if let std = metrics.standardisedResults, !std.isEmpty {
+                standardisedResultsView(std)
+            }
+        }
+    }
+
+    // MARK: - Standardised Results
+
+    private func standardisedResultsView(_ results: [StandardisedResult]) -> some View {
+        GroupBox("Standardised Operating Points") {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Text("Target P")
+                        .frame(width: 70, alignment: .leading)
+                    Text("Threshold")
+                        .frame(width: 75)
+                    Text("Precision")
+                        .frame(width: 75)
+                    Text("Recall")
+                        .frame(width: 75)
+                    Text("F1")
+                        .frame(width: 60)
+                    Text("Accuracy")
+                        .frame(width: 75)
+                }
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+
+                Divider()
+
+                ForEach(Array(results.enumerated()), id: \.offset) { _, r in
+                    HStack(spacing: 0) {
+                        Text(String(format: ">=%.0f%%", r.precisionTarget * 100))
+                            .frame(width: 70, alignment: .leading)
+                        Text(String(format: "%.2f", r.threshold))
+                            .frame(width: 75)
+                        Text(String(format: "%.3f", r.precision))
+                            .frame(width: 75)
+                        Text(String(format: "%.3f", r.recall))
+                            .fontWeight(.medium)
+                            .foregroundStyle(.orange)
+                            .frame(width: 75)
+                        Text(String(format: "%.3f", r.f1))
+                            .frame(width: 60)
+                        Text(String(format: "%.1f%%", r.accuracy * 100))
+                            .frame(width: 75)
+                    }
+                    .font(.callout.monospacedDigit())
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 8)
+
+                    if r.precisionTarget != results.last?.precisionTarget {
+                        Divider()
+                    }
+                }
+            }
+            .padding(4)
         }
     }
 

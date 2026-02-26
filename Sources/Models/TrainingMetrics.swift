@@ -22,6 +22,16 @@ struct CategoryResult: Codable, Equatable {
     let predictedNonMatch: Int
 }
 
+/// Test-set metrics at a fixed precision target for fair cross-model comparison.
+struct StandardisedResult: Codable, Equatable {
+    let precisionTarget: Double
+    let threshold: Double
+    let precision: Double
+    let recall: Double
+    let accuracy: Double
+    let f1: Double
+}
+
 /// Imported training metrics for visualisation.
 struct TrainingMetrics: Codable, Equatable {
     var trainLoss: [MetricPoint]
@@ -40,6 +50,7 @@ struct TrainingMetrics: Codable, Equatable {
     var confusionMatrix: ConfusionMatrix?
     var perCategoryResults: [String: CategoryResult]?
     var optimalThreshold: Double?
+    var standardisedResults: [StandardisedResult]?
 
     init(
         trainLoss: [MetricPoint] = [],
@@ -55,7 +66,8 @@ struct TrainingMetrics: Codable, Equatable {
         bestEpoch: Int? = nil,
         confusionMatrix: ConfusionMatrix? = nil,
         perCategoryResults: [String: CategoryResult]? = nil,
-        optimalThreshold: Double? = nil
+        optimalThreshold: Double? = nil,
+        standardisedResults: [StandardisedResult]? = nil
     ) {
         self.trainLoss = trainLoss
         self.validLoss = validLoss
@@ -71,5 +83,6 @@ struct TrainingMetrics: Codable, Equatable {
         self.confusionMatrix = confusionMatrix
         self.perCategoryResults = perCategoryResults
         self.optimalThreshold = optimalThreshold
+        self.standardisedResults = standardisedResults
     }
 }

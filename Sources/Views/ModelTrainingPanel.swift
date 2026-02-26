@@ -402,6 +402,8 @@ struct ModelTrainingPanel: View {
                         .frame(width: 55)
                     Text("F1")
                         .frame(width: 50)
+                    Text("R@P70")
+                        .frame(width: 55)
                     Text("Duration")
                         .frame(width: 65)
                     Text("Script")
@@ -451,6 +453,14 @@ struct ModelTrainingPanel: View {
             return "-"
         }()
 
+        let recallAtP70Text: String = {
+            if let std = model.metrics?.standardisedResults,
+               let r = std.first(where: { $0.precisionTarget == 0.7 }) {
+                return String(format: "%.3f", r.recall)
+            }
+            return "-"
+        }()
+
         let durationText: String = {
             if let d = model.metrics?.trainingDurationSeconds {
                 return d < 60 ? String(format: "%.0fs", d) : String(format: "%.1fm", d / 60)
@@ -491,6 +501,9 @@ struct ModelTrainingPanel: View {
                 .frame(width: 55)
             Text(f1Text)
                 .frame(width: 50)
+            Text(recallAtP70Text)
+                .foregroundStyle(recallAtP70Text != "-" ? .orange : .primary)
+                .frame(width: 55)
             Text(durationText)
                 .frame(width: 65)
             Text(scriptText)

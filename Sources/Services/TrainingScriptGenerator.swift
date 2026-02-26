@@ -312,6 +312,62 @@ enum TrainingScriptGenerator {
             return best_threshold, best_f1
 
 
+        def evaluate_standardised(model, valid_loader, test_loader, criterion,
+                                  targets=(0.5, 0.6, 0.7, 0.8)):
+            \"\"\"Find thresholds on validation set at fixed precision targets, then test.\"\"\"
+            model.eval()
+            all_logits = []
+            all_labels = []
+
+            with torch.no_grad():
+                for left, right, labels in valid_loader:
+                    left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
+                    outputs = model(left, right).squeeze()
+                    all_logits.extend(outputs.cpu().numpy())
+                    all_labels.extend(labels.cpu().numpy())
+
+            all_logits = np.array(all_logits)
+            all_labels = np.array(all_labels)
+
+            # For each precision target, find the lowest threshold (highest recall)
+            # that achieves at least that precision on the validation set
+            target_thresholds = []
+            for target_prec in targets:
+                best_recall = -1.0
+                best_t = None
+                best_p = None
+                for t in np.arange(-3.0, 3.05, 0.05):
+                    preds = (all_logits > t).astype(float)
+                    tp = ((preds == 1) & (all_labels == 1)).sum()
+                    fp = ((preds == 1) & (all_labels == 0)).sum()
+                    fn = ((preds == 0) & (all_labels == 1)).sum()
+                    prec = tp / (tp + fp) if (tp + fp) > 0 else 1.0
+                    rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+                    if prec >= target_prec and rec > best_recall:
+                        best_recall = float(rec)
+                        best_t = float(t)
+                        best_p = float(prec)
+                if best_t is not None:
+                    target_thresholds.append((target_prec, best_t, best_p, best_recall))
+
+            # Apply each threshold to the test set for fair cross-model comparison
+            results = []
+            for target_prec, threshold, _, _ in target_thresholds:
+                _, test_acc, test_prec, test_rec, test_f1 = run_validation(
+                    model, test_loader, criterion, threshold=threshold,
+                )
+                results.append({
+                    "precisionTarget": target_prec,
+                    "threshold": round(threshold, 4),
+                    "precision": round(test_prec, 6),
+                    "recall": round(test_rec, 6),
+                    "accuracy": round(test_acc, 6),
+                    "f1": round(test_f1, 6),
+                })
+
+            return results
+
+
         class CrispAlphaResize:
             \"\"\"Resize RGBA images with bilinear for RGB and nearest-neighbour for alpha.
             Prevents the alpha silhouette (piece geometry cue) from getting blurred
@@ -498,6 +554,16 @@ enum TrainingScriptGenerator {
             for cat, res in per_category.items():
                 print(f"  {cat}: {res['predictedMatch']}/{res['total']} predicted match")
 
+            # Standardised operating points for fair cross-model comparison
+            standardised = evaluate_standardised(model, valid_loader, test_loader, criterion)
+            print(f"\\nStandardised operating points (test set):")
+            for r in standardised:
+                print(
+                    f"  @Precision>={r['precisionTarget']:.0%}: "
+                    f"P={r['precision']:.3f} R={r['recall']:.3f} "
+                    f"F1={r['f1']:.3f} (t={r['threshold']:.2f})"
+                )
+
             # Save metrics
             metrics["testLoss"] = round(test_loss, 6)
             metrics["testAccuracy"] = round(test_acc, 6)
@@ -509,6 +575,7 @@ enum TrainingScriptGenerator {
             metrics["optimalThreshold"] = round(opt_threshold, 6)
             metrics["confusionMatrix"] = confusion_matrix
             metrics["perCategoryResults"] = per_category
+            metrics["standardisedResults"] = standardised
 
             with open("metrics.json", "w") as f:
                 json.dump(metrics, f, indent=2)
