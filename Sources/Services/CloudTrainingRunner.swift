@@ -326,13 +326,20 @@ enum CloudTrainingRunner {
         }
 
         let totalEpochs = model.architecture.epochs
-        // Smart pip install: if CUDA PyTorch is already available (common on cloud GPU providers),
-        // only install non-torch deps to avoid overwriting it with a CPU-only version.
-        // Otherwise, install everything using the PyTorch CUDA index URL.
+        // Smart pip install:
+        // 1. Check if CUDA PyTorch already works -> only install non-torch deps
+        // 2. Otherwise, install torch+torchvision from PyTorch CUDA index (--index-url
+        //    replaces PyPI so pip can't prefer a newer CPU-only version), then other deps
+        // --root-user-action=ignore suppresses the venv warning when running as root
         let pipCommand = """
-            python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null && \
-            pip install pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2 || \
-            pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu124
+            if python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then \
+                echo "CUDA PyTorch already available"; \
+                pip install --root-user-action=ignore pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
+            else \
+                echo "Installing CUDA PyTorch..."; \
+                pip install --root-user-action=ignore torch torchvision --index-url https://download.pytorch.org/whl/cu124; \
+                pip install --root-user-action=ignore pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
+            fi
             """
         let remoteCommand = "cd \(remoteDir) && \(pipCommand) && PYTHONUNBUFFERED=1 python train.py"
 
