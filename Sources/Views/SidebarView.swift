@@ -292,12 +292,12 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func modelMenuItems(_ model: SiameseModel) -> some View {
-        Button("Export Training Package...") {
+        Button("Export Architecture & Script...") {
             exportTrainingPackage(model)
         }
 
-        if model.status == .trained {
-            Button("Export with Results...") {
+        if model.metrics != nil {
+            Button("Export Results...") {
                 exportModelWithResults(model)
             }
         }
@@ -341,7 +341,10 @@ struct SidebarView: View {
                 dataset: dataset,
                 to: exportDir
             )
-            model.status = .exported
+            // Only upgrade status - never downgrade a trained model
+            if model.status == .designed {
+                model.status = .exported
+            }
             ModelStore.saveModel(model)
         } catch {
             let alert = NSAlert()
