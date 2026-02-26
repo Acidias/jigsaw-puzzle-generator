@@ -238,11 +238,17 @@ enum ModelStore {
             )
         }
 
-        // Read training script from disk if available
+        // Read training script from disk, or regenerate from architecture as fallback
         let scriptPath = modelDirectory(for: model.id)
             .appendingPathComponent("training")
             .appendingPathComponent("train.py")
-        let trainingScript = try? String(contentsOf: scriptPath, encoding: .utf8)
+        let trainingScript: String
+        if let onDisk = try? String(contentsOf: scriptPath, encoding: .utf8) {
+            trainingScript = onDisk
+        } else {
+            let dsPath = dataset.map { DatasetStore.datasetDirectory(for: $0.id).path } ?? "./dataset"
+            trainingScript = TrainingScriptGenerator.generateScript(model: model, datasetPath: dsPath)
+        }
 
         return TrainingReport(
             model: modelSection,
@@ -274,7 +280,7 @@ struct TrainingReport: Codable {
     let architecture: ArchitectureSection
     let dataset: DatasetSection?
     let results: ResultsSection?
-    let trainingScript: String?
+    let trainingScript: String
 
     struct ModelSection: Codable {
         let id: String

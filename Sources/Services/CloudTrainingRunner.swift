@@ -113,6 +113,15 @@ enum CloudTrainingRunner {
                 datasetPath: "./dataset",
                 to: tempDir
             )
+            // Persist train.py to the model's permanent training directory
+            let persistDir = ModelStore.modelDirectory(for: model.id).appendingPathComponent("training")
+            try FileManager.default.createDirectory(at: persistDir, withIntermediateDirectories: true)
+            let src = tempDir.appendingPathComponent("train.py")
+            let dst = persistDir.appendingPathComponent("train.py")
+            if FileManager.default.fileExists(atPath: dst.path) {
+                try FileManager.default.removeItem(at: dst)
+            }
+            try FileManager.default.copyItem(at: src, to: dst)
             model.scriptHash = hash
             ModelStore.saveModel(model)
             state.appendLog("Wrote train.py and requirements.txt")
