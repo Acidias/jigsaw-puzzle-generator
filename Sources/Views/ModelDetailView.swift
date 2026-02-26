@@ -20,10 +20,11 @@ struct ModelDetailView: View {
             VStack(spacing: 20) {
                 headerSection
                 architectureSection
+                trainingSection
                 exportSection
                 importSection
 
-                if let metrics = model.metrics {
+                if let metrics = activeMetrics {
                     metricsCharts(metrics)
                     testResultsSection(metrics)
                 }
@@ -34,6 +35,19 @@ struct ModelDetailView: View {
             }
             .padding()
         }
+    }
+
+    /// Show live metrics during training, otherwise the model's final metrics.
+    private var activeMetrics: TrainingMetrics? {
+        if isTrainingThisModel, let live = modelState.liveMetrics,
+           !live.trainLoss.isEmpty {
+            return live
+        }
+        return model.metrics
+    }
+
+    private var isTrainingThisModel: Bool {
+        modelState.trainingModelID == model.id && modelState.isTraining
     }
 
     // MARK: - Header
@@ -64,6 +78,7 @@ struct ModelDetailView: View {
         let colour: Color = switch status {
         case .designed: .blue
         case .exported: .orange
+        case .training: .yellow
         case .trained: .green
         }
         return Text(status.rawValue.capitalized)
@@ -101,6 +116,161 @@ struct ModelDetailView: View {
                 }
             }
             .padding(8)
+        }
+    }
+
+    // MARK: - Training
+
+    private var trainingSection: some View {
+        GroupBox("Training") {
+            VStack(spacing: 12) {
+                if isTrainingThisModel {
+                    activeTrainingView
+                } else if model.status == .trained {
+                    trainedView
+                } else {
+                    idleTrainingView
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private var idleTrainingView: some View {
+        VStack(spacing: 8) {
+            Text("Run training directly from the app. Requires Python 3 with PyTorch.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Button {
+                startTraining()
+            } label: {
+                Label("Train", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .disabled(modelState.pythonAvailable == false || modelState.isTraining)
+
+            if modelState.pythonAvailable == false {
+                Label("python3 not found on this system", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if modelState.isTraining {
+                Text("Another model is currently training")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task {
+            if modelState.pythonAvailable == nil {
+                modelState.pythonAvailable = await TrainingRunner.isPythonAvailable()
+            }
+        }
+    }
+
+    private var activeTrainingView: some View {
+        VStack(spacing: 12) {
+            // Status label
+            HStack {
+                trainingStatusLabel
+                Spacer()
+                Button(role: .destructive) {
+                    TrainingRunner.cancel(state: modelState)
+                } label: {
+                    Label("Cancel", systemImage: "stop.fill")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            // Progress bar
+            if case .training(let epoch, let total) = modelState.trainingStatus {
+                VStack(spacing: 4) {
+                    ProgressView(value: Double(epoch), total: Double(total))
+                    Text("Epoch \(epoch)/\(total)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            // Log viewer
+            trainingLogView
+        }
+    }
+
+    @ViewBuilder
+    private var trainingStatusLabel: some View {
+        switch modelState.trainingStatus {
+        case .preparingEnvironment:
+            Label("Preparing environment...", systemImage: "gearshape")
+                .foregroundStyle(.secondary)
+        case .installingDependencies:
+            Label("Installing dependencies...", systemImage: "arrow.down.circle")
+                .foregroundStyle(.secondary)
+        case .training(let epoch, let total):
+            Label("Training \(epoch)/\(total)", systemImage: "play.circle.fill")
+                .foregroundStyle(.yellow)
+        case .importingResults:
+            Label("Importing results...", systemImage: "arrow.down.doc")
+                .foregroundStyle(.secondary)
+        default:
+            EmptyView()
+        }
+    }
+
+    private var trainedView: some View {
+        VStack(spacing: 8) {
+            Label("Training complete", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+
+            Button {
+                startTraining()
+            } label: {
+                Label("Retrain", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .disabled(modelState.pythonAvailable == false || modelState.isTraining)
+        }
+    }
+
+    private var trainingLogView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(modelState.trainingLog.enumerated()), id: \.offset) { index, line in
+                        Text(line)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .id(index)
+                    }
+                }
+                .padding(6)
+            }
+            .frame(maxHeight: 200)
+            .background(Color(nsColor: .textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .onChange(of: modelState.trainingLog.count) { _, _ in
+                if let last = modelState.trainingLog.indices.last {
+                    proxy.scrollTo(last, anchor: .bottom)
+                }
+            }
+        }
+    }
+
+    private func startTraining() {
+        guard let dataset = datasetState.datasets.first(where: { $0.id == model.sourceDatasetID }) else {
+            let alert = NSAlert()
+            alert.messageText = "Dataset Not Found"
+            alert.informativeText = "The source dataset (\(model.sourceDatasetName)) could not be found. It may have been deleted."
+            alert.runModal()
+            return
+        }
+
+        Task {
+            await TrainingRunner.train(model: model, dataset: dataset, state: modelState)
         }
     }
 

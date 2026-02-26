@@ -4,6 +4,7 @@ import Foundation
 enum ModelStatus: String, Codable {
     case designed
     case exported
+    case training
     case trained
 }
 

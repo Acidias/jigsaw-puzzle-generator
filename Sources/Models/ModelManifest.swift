@@ -29,14 +29,20 @@ struct ModelManifest: Codable {
     /// Metrics are loaded separately from metrics.json.
     @MainActor
     func toModel(metrics: TrainingMetrics? = nil) -> SiameseModel {
-        SiameseModel(
+        // If status was .training when the app crashed/quit, revert to .designed
+        var resolvedStatus = ModelStatus(rawValue: status) ?? .designed
+        if resolvedStatus == .training {
+            resolvedStatus = .designed
+        }
+
+        return SiameseModel(
             id: id,
             name: name,
             sourceDatasetID: sourceDatasetID,
             sourceDatasetName: sourceDatasetName,
             architecture: architecture,
             createdAt: createdAt,
-            status: ModelStatus(rawValue: status) ?? .designed,
+            status: resolvedStatus,
             metrics: metrics,
             hasImportedModel: hasImportedModel
         )

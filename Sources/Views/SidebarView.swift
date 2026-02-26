@@ -196,6 +196,7 @@ struct SidebarView: View {
         switch status {
         case .designed: return "circle.dashed"
         case .exported: return "arrow.up.circle"
+        case .training: return "play.circle.fill"
         case .trained: return "checkmark.circle.fill"
         }
     }
@@ -204,6 +205,7 @@ struct SidebarView: View {
         switch status {
         case .designed: return .blue
         case .exported: return .orange
+        case .training: return .yellow
         case .trained: return .green
         }
     }

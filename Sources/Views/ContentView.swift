@@ -38,7 +38,7 @@ struct ContentView: View {
                             DatasetDetailView(dataset: dataset, datasetState: datasetState)
                         }
                     case .modelTraining:
-                        ModelTrainingPanel(modelState: modelState, datasetState: datasetState)
+                        ModelTrainingPanel(modelState: modelState, datasetState: datasetState, selection: $sidebarSelection)
                     case .model(let id):
                         if let model = modelState.models.first(where: { $0.id == id }) {
                             ModelDetailView(model: model, modelState: modelState, datasetState: datasetState)

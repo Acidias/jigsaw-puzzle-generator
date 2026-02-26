@@ -23,6 +23,23 @@ struct ConvBlock: Codable, Identifiable, Equatable {
     }
 }
 
+/// Preferred compute device for training.
+enum DevicePreference: String, Codable, CaseIterable {
+    case auto
+    case mps
+    case cuda
+    case cpu
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .mps: return "MPS (Apple GPU)"
+        case .cuda: return "CUDA (NVIDIA GPU)"
+        case .cpu: return "CPU"
+        }
+    }
+}
+
 /// How the two embedding vectors are compared.
 enum ComparisonMethod: String, Codable, CaseIterable {
     case l1Distance = "l1"
@@ -48,6 +65,7 @@ struct SiameseArchitecture: Codable, Equatable {
     var batchSize: Int
     var epochs: Int
     var inputSize: Int
+    var devicePreference: DevicePreference
 
     /// Spatial dimensions are halved per MaxPool layer.
     /// Flattened size = last filter count * (inputSize / 2^poolCount)^2.
@@ -66,7 +84,8 @@ struct SiameseArchitecture: Codable, Equatable {
         learningRate: Double = 0.001,
         batchSize: Int = 32,
         epochs: Int = 50,
-        inputSize: Int = 392
+        inputSize: Int = 392,
+        devicePreference: DevicePreference = .auto
     ) {
         self.convBlocks = convBlocks ?? [
             ConvBlock(filters: 32, kernelSize: 3, useBatchNorm: true, useMaxPool: true),
@@ -80,5 +99,20 @@ struct SiameseArchitecture: Codable, Equatable {
         self.batchSize = batchSize
         self.epochs = epochs
         self.inputSize = inputSize
+        self.devicePreference = devicePreference
+    }
+
+    /// Custom decoder for backwards compatibility with manifests that lack devicePreference.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        convBlocks = try container.decode([ConvBlock].self, forKey: .convBlocks)
+        embeddingDimension = try container.decode(Int.self, forKey: .embeddingDimension)
+        comparisonMethod = try container.decode(ComparisonMethod.self, forKey: .comparisonMethod)
+        dropout = try container.decode(Double.self, forKey: .dropout)
+        learningRate = try container.decode(Double.self, forKey: .learningRate)
+        batchSize = try container.decode(Int.self, forKey: .batchSize)
+        epochs = try container.decode(Int.self, forKey: .epochs)
+        inputSize = try container.decode(Int.self, forKey: .inputSize)
+        devicePreference = try container.decodeIfPresent(DevicePreference.self, forKey: .devicePreference) ?? .auto
     }
 }

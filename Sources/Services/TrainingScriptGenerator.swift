@@ -40,8 +40,7 @@ enum TrainingScriptGenerator {
         EMBEDDING_DIM = \(arch.embeddingDimension)
         DROPOUT = \(arch.dropout)
 
-        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {DEVICE}")
+        \(generateDeviceSelectionPython(arch.devicePreference))
 
 
         # ── Dataset ────────────────────────────────────────────────────
@@ -352,6 +351,30 @@ enum TrainingScriptGenerator {
         }
     }
 
+    /// Write just train.py + requirements.txt to a directory (for TrainingRunner).
+    /// The script points directly at the given dataset path - no dataset copying.
+    @MainActor
+    static func writeTrainingFiles(model: SiameseModel, datasetPath: String, to directory: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let script = generateScript(model: model, datasetPath: datasetPath)
+        let scriptURL = directory.appendingPathComponent("train.py")
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+
+        let requirements = """
+        torch>=2.0
+        torchvision>=0.15
+        Pillow>=9.0
+        pandas>=1.5
+        numpy>=1.24
+        coremltools>=7.0
+        scikit-learn>=1.2
+        """
+        let reqURL = directory.appendingPathComponent("requirements.txt")
+        try requirements.write(to: reqURL, atomically: true, encoding: .utf8)
+    }
+
     // MARK: - Python Code Generation Helpers
 
     private static func generateConvBlocksPython(_ blocks: [ConvBlock]) -> String {
@@ -400,6 +423,44 @@ enum TrainingScriptGenerator {
                         nn.Linear(64, 1),
                         nn.Sigmoid(),
                     )
+            """
+        }
+    }
+
+    private static func generateDeviceSelectionPython(_ preference: DevicePreference) -> String {
+        switch preference {
+        case .auto:
+            return """
+            if torch.backends.mps.is_available():
+                    DEVICE = torch.device("mps")
+                elif torch.cuda.is_available():
+                    DEVICE = torch.device("cuda")
+                else:
+                    DEVICE = torch.device("cpu")
+                print(f"Using device: {DEVICE}")
+            """
+        case .mps:
+            return """
+            if torch.backends.mps.is_available():
+                    DEVICE = torch.device("mps")
+                else:
+                    print("Warning: MPS not available, falling back to CPU")
+                    DEVICE = torch.device("cpu")
+                print(f"Using device: {DEVICE}")
+            """
+        case .cuda:
+            return """
+            if torch.cuda.is_available():
+                    DEVICE = torch.device("cuda")
+                else:
+                    print("Warning: CUDA not available, falling back to CPU")
+                    DEVICE = torch.device("cpu")
+                print(f"Using device: {DEVICE}")
+            """
+        case .cpu:
+            return """
+            DEVICE = torch.device("cpu")
+                print(f"Using device: {DEVICE}")
             """
         }
     }

@@ -4,6 +4,7 @@ import SwiftUI
 struct ModelTrainingPanel: View {
     @ObservedObject var modelState: ModelState
     @ObservedObject var datasetState: DatasetState
+    @Binding var selection: SidebarItem?
 
     @State private var architecture = SiameseArchitecture()
     @State private var selectedDatasetID: UUID?
@@ -65,6 +66,10 @@ struct ModelTrainingPanel: View {
 
     private var canCreate: Bool {
         selectedDataset != nil && !modelName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var canTrain: Bool {
+        canCreate && modelState.pythonAvailable == true && !modelState.isTraining
     }
 
     // MARK: - Sections
@@ -252,6 +257,13 @@ struct ModelTrainingPanel: View {
                     Stepper("", value: $architecture.epochs, in: 1...500, step: 10)
                         .labelsHidden()
                 }
+
+                Picker("Device:", selection: $architecture.devicePreference) {
+                    ForEach(DevicePreference.allCases, id: \.rawValue) { pref in
+                        Text(pref.displayName).tag(pref)
+                    }
+                }
+                .font(.callout)
             }
             .padding(8)
         }
@@ -290,7 +302,7 @@ struct ModelTrainingPanel: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 Button {
-                    createModel(andExport: false)
+                    createModel(andExport: false, andTrain: false)
                 } label: {
                     Label("Create Model", systemImage: "plus.circle")
                 }
@@ -299,13 +311,23 @@ struct ModelTrainingPanel: View {
                 .disabled(!canCreate)
 
                 Button {
-                    createModel(andExport: true)
+                    createModel(andExport: true, andTrain: false)
                 } label: {
                     Label("Create & Export...", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .disabled(!canCreate)
+
+                Button {
+                    createModel(andExport: false, andTrain: true)
+                } label: {
+                    Label("Create & Train", systemImage: "play.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .tint(.green)
+                .disabled(!canTrain)
             }
 
             if !canCreate {
@@ -319,6 +341,17 @@ struct ModelTrainingPanel: View {
                         .foregroundStyle(.orange)
                 }
             }
+
+            if modelState.pythonAvailable == false {
+                Label("python3 not found - install Python to enable in-app training", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .task {
+            if modelState.pythonAvailable == nil {
+                modelState.pythonAvailable = await TrainingRunner.isPythonAvailable()
+            }
         }
     }
 
@@ -330,7 +363,7 @@ struct ModelTrainingPanel: View {
         architecture.inputSize = canvasSize
     }
 
-    private func createModel(andExport: Bool) {
+    private func createModel(andExport: Bool, andTrain: Bool) {
         guard let dataset = selectedDataset else { return }
         let name = modelName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
@@ -345,6 +378,14 @@ struct ModelTrainingPanel: View {
 
         if andExport {
             exportModel(model, dataset: dataset)
+        }
+
+        if andTrain {
+            // Navigate to the model detail view, then start training
+            selection = .model(model.id)
+            Task {
+                await TrainingRunner.train(model: model, dataset: dataset, state: modelState)
+            }
         }
     }
 
