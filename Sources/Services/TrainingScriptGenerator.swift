@@ -179,7 +179,7 @@ enum TrainingScriptGenerator {
             return total_loss / total, correct / total
 
 
-        def run_validation(model, loader, criterion):
+        def run_validation(model, loader, criterion, threshold=0.0):
             model.eval()
             total_loss = 0.0
             correct = 0
@@ -195,7 +195,7 @@ enum TrainingScriptGenerator {
                     loss = criterion(outputs, labels)
 
                     total_loss += loss.item() * labels.size(0)
-                    preds = (outputs > 0.0).float()
+                    preds = (outputs > threshold).float()
                     correct += (preds == labels).sum().item()
                     total += labels.size(0)
 
@@ -218,7 +218,7 @@ enum TrainingScriptGenerator {
             return avg_loss, accuracy, float(precision), float(recall), float(f1)
 
 
-        def run_detailed_test(model, dataset, criterion):
+        def run_detailed_test(model, dataset, criterion, threshold=0.0):
             \"\"\"Detailed test with confusion matrix and per-category breakdown.\"\"\"
             model.eval()
 
@@ -237,7 +237,7 @@ enum TrainingScriptGenerator {
                 for left, right, labels in loader:
                     left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
                     outputs = model(left, right).squeeze()
-                    preds = (outputs > 0.0).float()
+                    preds = (outputs > threshold).float()
                     all_preds.extend(preds.cpu().numpy())
                     all_labels.extend(labels.cpu().numpy())
 
@@ -271,6 +271,40 @@ enum TrainingScriptGenerator {
                 }
 
             return confusion_matrix, per_category
+
+
+        def find_optimal_threshold(model, loader):
+            \"\"\"Sweep logit thresholds on the validation set to maximise F1.\"\"\"
+            model.eval()
+            all_logits = []
+            all_labels = []
+
+            with torch.no_grad():
+                for left, right, labels in loader:
+                    left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
+                    outputs = model(left, right).squeeze()
+                    all_logits.extend(outputs.cpu().numpy())
+                    all_labels.extend(labels.cpu().numpy())
+
+            all_logits = np.array(all_logits)
+            all_labels = np.array(all_labels)
+
+            best_threshold = 0.0
+            best_f1 = 0.0
+
+            for t in np.arange(-3.0, 3.05, 0.05):
+                preds = (all_logits > t).astype(float)
+                tp = ((preds == 1) & (all_labels == 1)).sum()
+                fp = ((preds == 1) & (all_labels == 0)).sum()
+                fn = ((preds == 0) & (all_labels == 1)).sum()
+                prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+                rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+                f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+                if f1 > best_f1:
+                    best_f1 = f1
+                    best_threshold = float(t)
+
+            return best_threshold, best_f1
 
 
         class RGBAAugment:
@@ -388,14 +422,25 @@ enum TrainingScriptGenerator {
 
             # Test with best model
             model.load_state_dict(torch.load("best_model.pth", weights_only=True))
-            test_loss, test_acc, test_prec, test_rec, test_f1 = run_validation(model, test_loader, criterion)
+
+            # Find optimal decision threshold on validation set
+            opt_threshold, opt_f1 = find_optimal_threshold(model, valid_loader)
+            print(f"\\nOptimal threshold: {opt_threshold:.2f} (validation F1: {opt_f1:.4f})")
+
+            # Evaluate test set using optimal threshold
+            test_loss, test_acc, test_prec, test_rec, test_f1 = run_validation(
+                model, test_loader, criterion, threshold=opt_threshold
+            )
 
             # Detailed test: confusion matrix + per-category breakdown
-            confusion_matrix, per_category = run_detailed_test(model, test_dataset, criterion)
+            confusion_matrix, per_category = run_detailed_test(
+                model, test_dataset, criterion, threshold=opt_threshold
+            )
 
             print(f"\\n{'='*60}")
             print(f"Training complete in {duration:.1f}s")
             print(f"Best epoch: {best_epoch}")
+            print(f"Optimal threshold: {opt_threshold:.2f}")
             print(f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.4f}")
             print(f"Precision: {test_prec:.4f} | Recall: {test_rec:.4f} | F1: {test_f1:.4f}")
             print(f"\\nConfusion Matrix:")
@@ -413,6 +458,7 @@ enum TrainingScriptGenerator {
             metrics["testF1"] = round(test_f1, 6)
             metrics["trainingDurationSeconds"] = round(duration, 2)
             metrics["bestEpoch"] = best_epoch
+            metrics["optimalThreshold"] = round(opt_threshold, 6)
             metrics["confusionMatrix"] = confusion_matrix
             metrics["perCategoryResults"] = per_category
 

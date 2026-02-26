@@ -693,6 +693,9 @@ struct ModelDetailView: View {
                         if let f1 = metrics.testF1 {
                             statBadge(value: String(format: "%.3f", f1), label: "F1", colour: .purple)
                         }
+                        if let threshold = metrics.optimalThreshold {
+                            statBadge(value: String(format: "%.2f", threshold), label: "Threshold", colour: .cyan)
+                        }
                     }
 
                     HStack(spacing: 16) {

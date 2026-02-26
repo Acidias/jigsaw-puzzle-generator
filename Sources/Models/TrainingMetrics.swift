@@ -39,6 +39,7 @@ struct TrainingMetrics: Codable, Equatable {
     var bestEpoch: Int?
     var confusionMatrix: ConfusionMatrix?
     var perCategoryResults: [String: CategoryResult]?
+    var optimalThreshold: Double?
 
     init(
         trainLoss: [MetricPoint] = [],
@@ -53,7 +54,8 @@ struct TrainingMetrics: Codable, Equatable {
         trainingDurationSeconds: Double? = nil,
         bestEpoch: Int? = nil,
         confusionMatrix: ConfusionMatrix? = nil,
-        perCategoryResults: [String: CategoryResult]? = nil
+        perCategoryResults: [String: CategoryResult]? = nil,
+        optimalThreshold: Double? = nil
     ) {
         self.trainLoss = trainLoss
         self.validLoss = validLoss
@@ -68,5 +70,6 @@ struct TrainingMetrics: Codable, Equatable {
         self.bestEpoch = bestEpoch
         self.confusionMatrix = confusionMatrix
         self.perCategoryResults = perCategoryResults
+        self.optimalThreshold = optimalThreshold
     }
 }
