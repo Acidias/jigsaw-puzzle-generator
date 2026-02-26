@@ -5,6 +5,8 @@ enum SidebarItem: Hashable {
     case batchOpenverse
     case datasetGeneration
     case dataset(UUID)
+    case architecturePresets
+    case preset(UUID)
     case modelTraining
     case model(UUID)
     case project(UUID)
@@ -63,6 +65,41 @@ struct SidebarView: View {
                     }
                 }
 
+                Label("Architecture Presets", systemImage: "rectangle.3.group")
+                    .tag(SidebarItem.architecturePresets)
+
+                ForEach(modelState.presets) { preset in
+                    HStack(spacing: 8) {
+                        Image(systemName: preset.isBuiltIn ? "lock.rectangle.stack" : "rectangle.stack")
+                            .foregroundStyle(preset.isBuiltIn ? .orange : .teal)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(preset.name)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Text("\(preset.architecture.convBlocks.count) blocks, \(preset.architecture.embeddingDimension)-d")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tag(SidebarItem.preset(preset.id))
+                    .contextMenu {
+                        Button("Rename...") {
+                            promptRenamePreset(preset)
+                        }
+                        Button("Duplicate") {
+                            let copy = modelState.duplicatePreset(preset)
+                            selection = .preset(copy.id)
+                        }
+                        Divider()
+                        Button("Delete") {
+                            modelState.deletePreset(preset)
+                            if case .preset(preset.id) = selection {
+                                selection = .architecturePresets
+                            }
+                        }
+                    }
+                }
+
                 Label("Model Training", systemImage: "network")
                     .tag(SidebarItem.modelTraining)
 
@@ -110,7 +147,7 @@ struct SidebarView: View {
 
     private func handleSelection(_ item: SidebarItem?) {
         switch item {
-        case .batchLocal, .batchOpenverse, .datasetGeneration, .dataset, .modelTraining, .model:
+        case .batchLocal, .batchOpenverse, .datasetGeneration, .dataset, .architecturePresets, .preset, .modelTraining, .model:
             appState.selectedProjectID = nil
             appState.selectedCutID = nil
             appState.selectedCutImageID = nil
@@ -226,6 +263,26 @@ struct SidebarView: View {
             if !newName.isEmpty {
                 model.name = newName
                 ModelStore.saveModel(model)
+            }
+        }
+    }
+
+    private func promptRenamePreset(_ preset: ArchitecturePreset) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Preset"
+        alert.informativeText = "Enter a new name for the preset."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        textField.stringValue = preset.name
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                preset.name = newName
+                ArchitecturePresetStore.savePreset(preset)
             }
         }
     }

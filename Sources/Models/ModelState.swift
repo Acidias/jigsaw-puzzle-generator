@@ -20,6 +20,9 @@ class ModelState: ObservableObject {
     @Published var models: [SiameseModel] = []
     @Published var selectedModelID: UUID?
 
+    // Architecture presets
+    @Published var presets: [ArchitecturePreset] = []
+
     // Training state
     @Published var trainingStatus: TrainingStatus = .idle
     @Published var trainingModelID: UUID?
@@ -86,5 +89,44 @@ class ModelState: ObservableObject {
         if selectedModelID == model.id {
             selectedModelID = nil
         }
+    }
+
+    // MARK: - Presets
+
+    func loadPresets() {
+        presets = ArchitecturePresetStore.loadAllPresets()
+        seedBuiltInPresetsIfNeeded()
+    }
+
+    private func seedBuiltInPresetsIfNeeded() {
+        let existingIDs = Set(presets.map(\.id))
+        let missingDefaults = ArchitecturePreset.defaults.filter { !existingIDs.contains($0.id) }
+        for preset in missingDefaults {
+            presets.append(preset)
+            ArchitecturePresetStore.savePreset(preset)
+        }
+    }
+
+    func addPreset(_ preset: ArchitecturePreset) {
+        presets.append(preset)
+        ArchitecturePresetStore.savePreset(preset)
+    }
+
+    func savePreset(_ preset: ArchitecturePreset) {
+        ArchitecturePresetStore.savePreset(preset)
+    }
+
+    func deletePreset(_ preset: ArchitecturePreset) {
+        ArchitecturePresetStore.deletePreset(id: preset.id)
+        presets.removeAll { $0.id == preset.id }
+    }
+
+    func duplicatePreset(_ preset: ArchitecturePreset) -> ArchitecturePreset {
+        let copy = ArchitecturePreset(
+            name: "\(preset.name) Copy",
+            architecture: preset.architecture
+        )
+        addPreset(copy)
+        return copy
     }
 }

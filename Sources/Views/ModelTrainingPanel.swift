@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Main panel for designing and creating Siamese Neural Network models.
+/// Main panel for creating Siamese Neural Network models from presets.
 struct ModelTrainingPanel: View {
     @ObservedObject var modelState: ModelState
     @ObservedObject var datasetState: DatasetState
     @Binding var selection: SidebarItem?
 
-    @State private var architecture = SiameseArchitecture()
+    @State private var selectedPresetID: UUID?
     @State private var selectedDatasetID: UUID?
     @State private var modelName = ""
     @State private var connectionTestResult: String?
@@ -23,18 +23,18 @@ struct ModelTrainingPanel: View {
                     Text("Model Training")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    Text("Design a Siamese Neural Network, export a training script, and visualise results")
+                    Text("Pick an architecture preset and dataset, then create and train a model")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .padding(.vertical, 8)
 
+                // Architecture preset picker
+                presetPickerSection
+
                 // Dataset picker
                 datasetPickerSection
-
-                // Architecture editor (conv blocks, embedding, hyperparameters, summary)
-                ArchitectureEditorView(architecture: $architecture)
 
                 // Training target
                 trainingTargetSection
@@ -50,13 +50,28 @@ struct ModelTrainingPanel: View {
 
     // MARK: - Computed
 
+    private var selectedPreset: ArchitecturePreset? {
+        guard let id = selectedPresetID else { return nil }
+        return modelState.presets.first { $0.id == id }
+    }
+
     private var selectedDataset: PuzzleDataset? {
         guard let id = selectedDatasetID else { return nil }
         return datasetState.datasets.first { $0.id == id }
     }
 
+    /// Build the architecture from the selected preset, overriding inputSize from the dataset.
+    private var resolvedArchitecture: SiameseArchitecture? {
+        guard var arch = selectedPreset?.architecture else { return nil }
+        if let dataset = selectedDataset {
+            let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
+            arch.inputSize = canvasSize
+        }
+        return arch
+    }
+
     private var canCreate: Bool {
-        selectedDataset != nil && !modelName.trimmingCharacters(in: .whitespaces).isEmpty
+        selectedPreset != nil && selectedDataset != nil && !modelName.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var canTrain: Bool {
@@ -67,7 +82,68 @@ struct ModelTrainingPanel: View {
         return modelState.pythonAvailable == true
     }
 
-    // MARK: - Sections
+    // MARK: - Preset Picker
+
+    private var presetPickerSection: some View {
+        GroupBox("Architecture Preset") {
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Preset:", selection: $selectedPresetID) {
+                    Text("Select a preset...").tag(nil as UUID?)
+                    ForEach(modelState.presets) { preset in
+                        Text(preset.name).tag(preset.id as UUID?)
+                    }
+                }
+                .font(.callout)
+
+                if modelState.presets.isEmpty {
+                    Text("No presets available. Create one in Architecture Presets.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                if let preset = selectedPreset {
+                    architectureSummary(preset.architecture)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private func architectureSummary(_ arch: SiameseArchitecture) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            let filters = arch.convBlocks.map { String($0.filters) }.joined(separator: " > ")
+            summaryRow("Conv blocks", "\(arch.convBlocks.count) (\(filters))")
+            summaryRow("Embedding", "\(arch.embeddingDimension)-d")
+            summaryRow("Comparison", arch.comparisonMethod.displayName)
+            summaryRow("Dropout", String(format: "%.2f", arch.dropout))
+            Divider()
+            summaryRow("Learning rate", "\(arch.learningRate)")
+            summaryRow("Batch size", "\(arch.batchSize)")
+            summaryRow("Epochs", "\(arch.epochs)")
+            if let dataset = selectedDataset {
+                let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
+                Divider()
+                summaryRow("Input size", "\(canvasSize) x \(canvasSize) (from dataset)")
+            }
+        }
+        .padding(8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func summaryRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.caption.monospacedDigit())
+                .fontWeight(.medium)
+        }
+    }
+
+    // MARK: - Dataset Picker
 
     private var datasetPickerSection: some View {
         GroupBox("Source Dataset") {
@@ -80,9 +156,6 @@ struct ModelTrainingPanel: View {
                     }
                 }
                 .font(.callout)
-                .onChange(of: selectedDatasetID) { _, _ in
-                    updateInputSizeFromDataset()
-                }
 
                 if datasetState.datasets.isEmpty {
                     Text("No datasets available. Generate a dataset first.")
@@ -108,6 +181,8 @@ struct ModelTrainingPanel: View {
         }
     }
 
+    // MARK: - Training Target
+
     private var trainingTargetSection: some View {
         GroupBox("Training Target") {
             VStack(spacing: 8) {
@@ -117,11 +192,6 @@ struct ModelTrainingPanel: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: modelState.trainingTarget) { _, newValue in
-                    if newValue == .cloud {
-                        architecture.devicePreference = .auto
-                    }
-                }
 
                 if modelState.trainingTarget == .cloud {
                     panelCloudConfigForm
@@ -244,6 +314,8 @@ struct ModelTrainingPanel: View {
         }
     }
 
+    // MARK: - Action Section
+
     private var actionSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -277,7 +349,11 @@ struct ModelTrainingPanel: View {
             }
 
             if !canCreate {
-                if selectedDataset == nil {
+                if selectedPreset == nil {
+                    Text("Select an architecture preset to continue")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else if selectedDataset == nil {
                     Text("Select a source dataset to continue")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -307,14 +383,9 @@ struct ModelTrainingPanel: View {
 
     // MARK: - Actions
 
-    private func updateInputSizeFromDataset() {
-        guard let dataset = selectedDataset else { return }
-        let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
-        architecture.inputSize = canvasSize
-    }
-
     private func createModel(andExport: Bool, andTrain: Bool) {
-        guard let dataset = selectedDataset else { return }
+        guard let architecture = resolvedArchitecture,
+              let dataset = selectedDataset else { return }
         let name = modelName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
 

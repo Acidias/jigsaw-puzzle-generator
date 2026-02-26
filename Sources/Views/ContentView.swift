@@ -37,6 +37,12 @@ struct ContentView: View {
                         if let dataset = datasetState.datasets.first(where: { $0.id == id }) {
                             DatasetDetailView(dataset: dataset, datasetState: datasetState)
                         }
+                    case .architecturePresets:
+                        ArchitecturePresetsPanel(modelState: modelState, selection: $sidebarSelection)
+                    case .preset(let id):
+                        if let preset = modelState.presets.first(where: { $0.id == id }) {
+                            PresetDetailView(preset: preset, modelState: modelState)
+                        }
                     case .modelTraining:
                         ModelTrainingPanel(modelState: modelState, datasetState: datasetState, selection: $sidebarSelection)
                     case .model(let id):
@@ -173,6 +179,7 @@ struct ContentView: View {
         }
         .task {
             datasetState.loadDatasets()
+            modelState.loadPresets()
             modelState.loadModels()
         }
     }
