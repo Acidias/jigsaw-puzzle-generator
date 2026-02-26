@@ -210,39 +210,59 @@ enum CloudTrainingRunner {
                 state.appendLog("Uploading dataset to \(config.hostname)...")
             }
 
-            // Upload using tar piped through SSH - sends all files in a single stream,
-            // much faster than scp -r which opens a transfer per file.
-            // tar cf - creates archive to stdout, ssh pipes it to tar xf - on remote.
             do {
+                // Clean stale ._ metadata files from previous macOS uploads, then ensure dir exists
                 _ = try await runProcess(
                     executable: "/usr/bin/ssh",
-                    arguments: sshFlags(config) + [remote, "mkdir -p \(remoteDatasetCache)"],
+                    arguments: sshFlags(config) + [remote, "find \(remoteDatasetCache) -name '._*' -delete 2>/dev/null; mkdir -p \(remoteDatasetCache)"],
                     workingDirectory: nil,
                     environment: [:],
                     onStdoutLine: { _ in },
                     onStderrLine: { _ in }
                 )
 
-                // Build the tar|ssh pipeline as a shell command.
-                // --no-mac-metadata strips Apple xattrs/resource forks from the archive.
-                // --no-same-owner prevents remote tar from trying to set macOS UIDs.
+                // tar|ssh pipeline: single stream, much faster than scp -r per-file.
+                // --no-mac-metadata strips Apple xattrs, --no-same-owner avoids UID warnings.
                 let sshCmd = "ssh -i \(config.resolvedKeyPath) -p \(config.port) -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
-                let tarPipeline = "tar cf - --no-mac-metadata -C \"\(datasetDir.path)\" . | \(sshCmd) \(remote) \"tar xf - --no-same-owner -C \(remoteDatasetCache)\""
+                let tarPipeline = "tar cf - --no-mac-metadata -C \"\(datasetDir.path)\" . | \(sshCmd) \(remote) \"tar xf - --no-same-owner -C \(remoteDatasetCache)\" 2>/dev/null"
+
+                // Poll remote file count every 10 seconds for progress
+                let progressTask = Task {
+                    let pollFlags = sshFlags(config)
+                    let pollTarget = remoteTarget(config)
+                    while !Task.isCancelled {
+                        try await Task.sleep(nanoseconds: 10_000_000_000)
+                        guard !Task.isCancelled else { break }
+                        let captured = CapturedLine()
+                        let _ = try? await runProcess(
+                            executable: "/usr/bin/ssh",
+                            arguments: pollFlags + [pollTarget, "find \(remoteDatasetCache) -type f | wc -l"],
+                            workingDirectory: nil,
+                            environment: [:],
+                            onStdoutLine: { line in
+                                captured.value = line.trimmingCharacters(in: .whitespaces)
+                            },
+                            onStderrLine: { _ in }
+                        )
+                        if let count = Int(captured.value), count > 0 {
+                            let pct = localFileCount > 0 ? Int(Double(count) / Double(localFileCount) * 100) : 0
+                            await MainActor.run {
+                                state.appendLog("Upload progress: \(count)/\(localFileCount) files (\(pct)%)")
+                            }
+                        }
+                    }
+                }
 
                 let exitCode = try await runProcess(
                     executable: "/bin/sh",
                     arguments: ["-c", tarPipeline],
                     workingDirectory: nil,
                     environment: ["COPYFILE_DISABLE": "1"],
-                    onStdoutLine: { line in
-                        Task { @MainActor in state.appendLog("[upload] \(line)") }
-                    },
-                    onStderrLine: { line in
-                        // Filter out macOS tar metadata warnings that flood the log
-                        if line.contains("LIBARCHIVE.xattr") || line.contains("Cannot change ownership") { return }
-                        Task { @MainActor in state.appendLog("[upload] \(line)") }
-                    }
+                    onStdoutLine: { _ in },
+                    onStderrLine: { _ in }
                 )
+
+                progressTask.cancel()
 
                 if exitCode != 0 {
                     await handleFailure(reason: "Dataset upload failed (exit code \(exitCode))", model: model, state: state)
