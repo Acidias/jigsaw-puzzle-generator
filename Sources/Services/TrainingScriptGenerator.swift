@@ -26,6 +26,7 @@ enum TrainingScriptGenerator {
 
         import torch
         import torch.nn as nn
+        import torch.nn.functional as F
         import torch.optim as optim
         from torch.utils.data import Dataset, DataLoader
         import torchvision.transforms as transforms
@@ -112,8 +113,8 @@ enum TrainingScriptGenerator {
                 layers = []
                 in_channels = 3
         \(generateConvBlocksPython(arch.convBlocks))
-                layers.append(nn.AdaptiveAvgPool2d((\(SiameseArchitecture.adaptivePoolSize), \(SiameseArchitecture.adaptivePoolSize))))
                 self.backbone = nn.Sequential(*layers)
+                self.pool = nn.AdaptiveAvgPool2d((\(SiameseArchitecture.adaptivePoolSize), \(SiameseArchitecture.adaptivePoolSize)))
 
                 # Embedding head
                 self.embedding = nn.Sequential(
@@ -128,6 +129,13 @@ enum TrainingScriptGenerator {
             def forward_one(self, x):
                 \"\"\"Forward pass through one branch.\"\"\"
                 x = self.backbone(x)
+                # Pad spatial dims to be divisible by pool output size (MPS compatibility)
+                ps = \(SiameseArchitecture.adaptivePoolSize)
+                pad_h = (-x.shape[2]) % ps
+                pad_w = (-x.shape[3]) % ps
+                if pad_h > 0 or pad_w > 0:
+                    x = F.pad(x, [0, pad_w, 0, pad_h])
+                x = self.pool(x)
                 x = self.embedding(x)
                 return x
 
