@@ -23,6 +23,7 @@ struct ModelDetailView: View {
         ScrollView {
             VStack(spacing: 20) {
                 headerSection
+                notesSection
                 architectureSection
                 trainingSection
 
@@ -79,6 +80,25 @@ struct ModelDetailView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+
+            // Experiment metadata row
+            HStack(spacing: 12) {
+                if let presetName = model.sourcePresetName {
+                    Label(presetName, systemImage: "rectangle.stack")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                if let hash = model.scriptHash {
+                    Label(String(hash.prefix(8)), systemImage: "number")
+                        .font(.callout.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+                if let trainedAt = model.trainedAt {
+                    Label(Self.dateFormatter.string(from: trainedAt), systemImage: "checkmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .padding(.vertical, 8)
     }
@@ -98,6 +118,31 @@ struct ModelDetailView: View {
             .padding(.vertical, 4)
             .background(colour.opacity(0.12))
             .clipShape(Capsule())
+    }
+
+    // MARK: - Notes
+
+    private var notesSection: some View {
+        GroupBox("Notes") {
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $model.notes)
+                    .font(.callout)
+                    .frame(minHeight: 60)
+                    .scrollContentBackground(.hidden)
+                    .onChange(of: model.notes) { _, _ in
+                        ModelStore.saveModel(model)
+                    }
+                if model.notes.isEmpty {
+                    Text("Add experiment notes...")
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 1)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(4)
+        }
     }
 
     // MARK: - Architecture

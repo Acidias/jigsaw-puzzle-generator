@@ -53,6 +53,15 @@ enum ComparisonMethod: String, Codable, CaseIterable {
         case .concatenation: return "Concatenation"
         }
     }
+
+    /// Short label for compact table display.
+    var shortName: String {
+        switch self {
+        case .l1Distance: return "L1"
+        case .l2Distance: return "L2"
+        case .concatenation: return "Cat"
+        }
+    }
 }
 
 /// Full architecture configuration for a Siamese Neural Network.

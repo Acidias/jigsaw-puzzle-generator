@@ -120,9 +120,15 @@ struct SidebarView: View {
                             Text(model.name)
                                 .font(.callout)
                                 .lineLimit(1)
-                            Text(model.status.rawValue.capitalized)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            if model.status == .trained, let acc = model.metrics?.testAccuracy {
+                                Text("Trained - \(String(format: "%.1f%%", acc * 100))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text(model.status.rawValue.capitalized)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         modelMenu(model)

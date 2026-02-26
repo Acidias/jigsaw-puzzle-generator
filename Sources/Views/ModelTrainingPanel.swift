@@ -42,6 +42,11 @@ struct ModelTrainingPanel: View {
                 // Action buttons
                 actionSection
 
+                // Models comparison table
+                if !modelState.models.isEmpty {
+                    modelsComparisonSection
+                }
+
                 Spacer(minLength: 20)
             }
             .padding()
@@ -376,6 +381,147 @@ struct ModelTrainingPanel: View {
         }
     }
 
+    // MARK: - Models Comparison
+
+    private var modelsComparisonSection: some View {
+        GroupBox("Models") {
+            VStack(spacing: 0) {
+                // Header row
+                HStack(spacing: 0) {
+                    Text("Name")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Status")
+                        .frame(width: 70)
+                    Text("Dataset")
+                        .frame(width: 100)
+                    Text("Preset")
+                        .frame(width: 80)
+                    Text("Arch")
+                        .frame(width: 100)
+                    Text("Acc")
+                        .frame(width: 55)
+                    Text("F1")
+                        .frame(width: 50)
+                    Text("Duration")
+                        .frame(width: 65)
+                    Text("Script")
+                        .frame(width: 70)
+                    Text("Date")
+                        .frame(width: 90)
+                }
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+
+                Divider()
+
+                let sorted = modelState.models.sorted { $0.createdAt > $1.createdAt }
+                ForEach(sorted) { model in
+                    comparisonRow(model)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selection = .model(model.id)
+                        }
+
+                    if model.id != sorted.last?.id {
+                        Divider()
+                    }
+                }
+            }
+            .padding(4)
+        }
+    }
+
+    private func comparisonRow(_ model: SiameseModel) -> some View {
+        let arch = model.architecture
+        let archSummary = "\(arch.convBlocks.count)blk \(arch.embeddingDimension)-d \(arch.comparisonMethod.shortName)"
+
+        let accText: String = {
+            if let acc = model.metrics?.testAccuracy {
+                return String(format: "%.1f%%", acc * 100)
+            }
+            return "-"
+        }()
+
+        let f1Text: String = {
+            if let f1 = model.metrics?.testF1 {
+                return String(format: "%.3f", f1)
+            }
+            return "-"
+        }()
+
+        let durationText: String = {
+            if let d = model.metrics?.trainingDurationSeconds {
+                return d < 60 ? String(format: "%.0fs", d) : String(format: "%.1fm", d / 60)
+            }
+            return "-"
+        }()
+
+        let scriptText: String = {
+            if let hash = model.scriptHash {
+                return String(hash.prefix(8))
+            }
+            return "-"
+        }()
+
+        let dateText: String = {
+            if let trainedAt = model.trainedAt {
+                return Self.shortDateFormatter.string(from: trainedAt)
+            }
+            return Self.shortDateFormatter.string(from: model.createdAt)
+        }()
+
+        return HStack(spacing: 0) {
+            Text(model.name)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            comparisonStatusText(model.status)
+                .frame(width: 70)
+            Text(model.sourceDatasetName)
+                .lineLimit(1)
+                .frame(width: 100)
+            Text(model.sourcePresetName ?? "-")
+                .lineLimit(1)
+                .frame(width: 80)
+            Text(archSummary)
+                .lineLimit(1)
+                .frame(width: 100)
+            Text(accText)
+                .frame(width: 55)
+            Text(f1Text)
+                .frame(width: 50)
+            Text(durationText)
+                .frame(width: 65)
+            Text(scriptText)
+                .font(.callout.monospaced())
+                .frame(width: 70)
+            Text(dateText)
+                .frame(width: 90)
+        }
+        .font(.callout.monospacedDigit())
+        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+    }
+
+    private func comparisonStatusText(_ status: ModelStatus) -> some View {
+        let colour: Color = switch status {
+        case .designed: .blue
+        case .exported: .orange
+        case .training: .yellow
+        case .trained: .green
+        }
+        return Text(status.rawValue.capitalized)
+            .foregroundStyle(colour)
+    }
+
+    private static let shortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f
+    }()
+
     // MARK: - Actions
 
     private func createModel(andTrain: Bool) {
@@ -388,7 +534,8 @@ struct ModelTrainingPanel: View {
             name: name,
             sourceDatasetID: dataset.id,
             sourceDatasetName: dataset.name,
-            architecture: architecture
+            architecture: architecture,
+            sourcePresetName: selectedPreset?.name
         )
         modelState.addModel(model)
 

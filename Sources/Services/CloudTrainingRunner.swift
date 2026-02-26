@@ -108,11 +108,13 @@ enum CloudTrainingRunner {
                 architecture: cloudArch,
                 createdAt: model.createdAt
             )
-            try TrainingScriptGenerator.writeTrainingFiles(
+            let hash = try TrainingScriptGenerator.writeTrainingFiles(
                 model: cloudModel,
                 datasetPath: "./dataset",
                 to: tempDir
             )
+            model.scriptHash = hash
+            ModelStore.saveModel(model)
             state.appendLog("Wrote train.py and requirements.txt")
         } catch {
             state.trainingStatus = .failed(reason: "Failed to write training files: \(error.localizedDescription)")
@@ -480,6 +482,7 @@ enum CloudTrainingRunner {
 
         // Mark complete
         await MainActor.run {
+            model.trainedAt = Date()
             model.status = .trained
             ModelStore.saveModel(model)
             state.trainingStatus = .completed

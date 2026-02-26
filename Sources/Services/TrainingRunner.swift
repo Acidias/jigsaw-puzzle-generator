@@ -85,11 +85,13 @@ enum TrainingRunner {
 
         // Write train.py + requirements.txt pointing at internal dataset
         do {
-            try TrainingScriptGenerator.writeTrainingFiles(
+            let hash = try TrainingScriptGenerator.writeTrainingFiles(
                 model: model,
                 datasetPath: datasetDir.path,
                 to: workDir
             )
+            model.scriptHash = hash
+            ModelStore.saveModel(model)
             state.appendLog("Wrote train.py and requirements.txt")
         } catch {
             state.trainingStatus = .failed(reason: "Failed to write training files: \(error.localizedDescription)")
@@ -272,6 +274,7 @@ enum TrainingRunner {
 
         // Mark complete
         await MainActor.run {
+            model.trainedAt = Date()
             model.status = .trained
             ModelStore.saveModel(model)
             state.trainingStatus = .completed

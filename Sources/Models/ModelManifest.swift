@@ -11,6 +11,33 @@ struct ModelManifest: Codable {
     let hasImportedModel: Bool
     // Architecture
     let architecture: SiameseArchitecture
+    // Experiment version control
+    let sourcePresetName: String?
+    let notes: String
+    let trainedAt: Date?
+    let scriptHash: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, sourceDatasetID, sourceDatasetName, createdAt, status
+        case hasImportedModel, architecture
+        case sourcePresetName, notes, trainedAt, scriptHash
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        sourceDatasetID = try container.decode(UUID.self, forKey: .sourceDatasetID)
+        sourceDatasetName = try container.decode(String.self, forKey: .sourceDatasetName)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        status = try container.decode(String.self, forKey: .status)
+        hasImportedModel = try container.decode(Bool.self, forKey: .hasImportedModel)
+        architecture = try container.decode(SiameseArchitecture.self, forKey: .architecture)
+        sourcePresetName = try container.decodeIfPresent(String.self, forKey: .sourcePresetName)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        trainedAt = try container.decodeIfPresent(Date.self, forKey: .trainedAt)
+        scriptHash = try container.decodeIfPresent(String.self, forKey: .scriptHash)
+    }
 
     /// Create a manifest from a runtime SiameseModel.
     @MainActor
@@ -23,6 +50,10 @@ struct ModelManifest: Codable {
         self.status = model.status.rawValue
         self.hasImportedModel = model.hasImportedModel
         self.architecture = model.architecture
+        self.sourcePresetName = model.sourcePresetName
+        self.notes = model.notes
+        self.trainedAt = model.trainedAt
+        self.scriptHash = model.scriptHash
     }
 
     /// Reconstruct a runtime SiameseModel from this manifest.
@@ -44,7 +75,11 @@ struct ModelManifest: Codable {
             createdAt: createdAt,
             status: resolvedStatus,
             metrics: metrics,
-            hasImportedModel: hasImportedModel
+            hasImportedModel: hasImportedModel,
+            sourcePresetName: sourcePresetName,
+            notes: notes,
+            trainedAt: trainedAt,
+            scriptHash: scriptHash
         )
     }
 }

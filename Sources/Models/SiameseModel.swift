@@ -21,6 +21,10 @@ class SiameseModel: ObservableObject, Identifiable {
     @Published var status: ModelStatus
     @Published var metrics: TrainingMetrics?
     @Published var hasImportedModel: Bool
+    @Published var sourcePresetName: String?
+    @Published var notes: String
+    @Published var trainedAt: Date?
+    @Published var scriptHash: String?
 
     init(
         id: UUID = UUID(),
@@ -31,7 +35,11 @@ class SiameseModel: ObservableObject, Identifiable {
         createdAt: Date = Date(),
         status: ModelStatus = .designed,
         metrics: TrainingMetrics? = nil,
-        hasImportedModel: Bool = false
+        hasImportedModel: Bool = false,
+        sourcePresetName: String? = nil,
+        notes: String = "",
+        trainedAt: Date? = nil,
+        scriptHash: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -42,6 +50,10 @@ class SiameseModel: ObservableObject, Identifiable {
         self.status = status
         self.metrics = metrics
         self.hasImportedModel = hasImportedModel
+        self.sourcePresetName = sourcePresetName
+        self.notes = notes
+        self.trainedAt = trainedAt
+        self.scriptHash = scriptHash
     }
 }
 

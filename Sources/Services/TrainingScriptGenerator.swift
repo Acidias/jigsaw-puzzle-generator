@@ -1,8 +1,16 @@
+import CryptoKit
 import Foundation
 
 /// Generates self-contained PyTorch training scripts for Siamese networks.
 /// Stateless enum - all methods are static.
 enum TrainingScriptGenerator {
+
+    /// Compute SHA-256 hex hash of a string.
+    private static func sha256Hex(_ string: String) -> String {
+        let data = Data(string.utf8)
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
 
     /// Generate the full training script as a string.
     @MainActor
@@ -442,13 +450,15 @@ enum TrainingScriptGenerator {
     }
 
     /// Export a complete training package (script + requirements + optionally the dataset).
+    /// Returns the SHA-256 hex hash of the generated training script.
+    @discardableResult
     @MainActor
     static func exportTrainingPackage(
         model: SiameseModel,
         dataset: PuzzleDataset,
         to destination: URL,
         includeDataset: Bool = true
-    ) throws {
+    ) throws -> String {
         let fm = FileManager.default
         try fm.createDirectory(at: destination, withIntermediateDirectories: true)
 
@@ -476,12 +486,16 @@ enum TrainingScriptGenerator {
             let datasetDest = destination.appendingPathComponent("dataset")
             try DatasetStore.exportDataset(dataset, to: datasetDest)
         }
+
+        return sha256Hex(script)
     }
 
     /// Write just train.py + requirements.txt to a directory (for TrainingRunner).
     /// The script points directly at the given dataset path - no dataset copying.
+    /// Returns the SHA-256 hex hash of the generated training script.
+    @discardableResult
     @MainActor
-    static func writeTrainingFiles(model: SiameseModel, datasetPath: String, to directory: URL) throws {
+    static func writeTrainingFiles(model: SiameseModel, datasetPath: String, to directory: URL) throws -> String {
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -500,6 +514,8 @@ enum TrainingScriptGenerator {
         """
         let reqURL = directory.appendingPathComponent("requirements.txt")
         try requirements.write(to: reqURL, atomically: true, encoding: .utf8)
+
+        return sha256Hex(script)
     }
 
     // MARK: - Python Code Generation Helpers
