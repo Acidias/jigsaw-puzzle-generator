@@ -355,7 +355,11 @@ struct ModelTrainingPanel: View {
                 }
             }
 
-            if modelState.trainingTarget == .local && modelState.pythonAvailable == false {
+            if modelState.isTraining {
+                Label("Another model is currently training", systemImage: "hourglass")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if modelState.trainingTarget == .local && modelState.pythonAvailable == false {
                 Label("python3 not found - install Python to enable in-app training", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
