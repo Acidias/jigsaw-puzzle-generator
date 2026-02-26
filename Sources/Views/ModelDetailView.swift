@@ -1,5 +1,6 @@
 import Charts
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Detail view for a persisted SiameseModel.
 /// Shows architecture summary, training controls, and metric charts.
@@ -895,12 +896,39 @@ struct ModelDetailView: View {
 
     private var actionsSection: some View {
         HStack(spacing: 12) {
+            if model.metrics != nil {
+                Button {
+                    exportReport()
+                } label: {
+                    Label("Export Report", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+            }
+
             Button(role: .destructive) {
                 modelState.deleteModel(model)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
             .buttonStyle(.bordered)
+        }
+    }
+
+    private func exportReport() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(model.name.sanitisedForFilename())_report.json"
+        panel.message = "Export training report"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try ModelStore.exportReport(model: model, datasets: datasetState.datasets, to: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Export Failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
         }
     }
 
