@@ -139,37 +139,45 @@ enum TrainingRunner {
             state.appendLog("Using existing virtual environment")
         }
 
-        // Install dependencies using venv pip
-        state.trainingStatus = .installingDependencies
-        state.appendLog("[pip] Installing dependencies...")
+        // Install dependencies using venv pip (skip if already done)
+        let depsMarker = workDir.appendingPathComponent(".deps_installed")
+        if FileManager.default.fileExists(atPath: depsMarker.path) {
+            state.appendLog("Dependencies already installed, skipping pip install")
+        } else {
+            state.trainingStatus = .installingDependencies
+            state.appendLog("[pip] Installing dependencies...")
 
-        let pipExitCode: Int32
-        do {
-            pipExitCode = try await runProcess(
-                executable: venvPython,
-                arguments: ["-m", "pip", "install", "-r", "requirements.txt"],
-                workingDirectory: workDir,
-                environment: env,
-                state: state,
-                onStdoutLine: { line in
-                    Task { @MainActor in state.appendLog("[pip] \(line)") }
-                },
-                onStderrLine: { line in
-                    Task { @MainActor in state.appendLog("[pip] \(line)") }
-                }
-            )
-        } catch {
-            await handleCancellationOrFailure(error: error, model: model, state: state)
-            return
-        }
-
-        if pipExitCode != 0 {
-            await MainActor.run {
-                state.trainingStatus = .failed(reason: "pip install failed (exit code \(pipExitCode))")
-                model.status = .designed
-                ModelStore.saveModel(model)
+            let pipExitCode: Int32
+            do {
+                pipExitCode = try await runProcess(
+                    executable: venvPython,
+                    arguments: ["-m", "pip", "install", "-r", "requirements.txt"],
+                    workingDirectory: workDir,
+                    environment: env,
+                    state: state,
+                    onStdoutLine: { line in
+                        Task { @MainActor in state.appendLog("[pip] \(line)") }
+                    },
+                    onStderrLine: { line in
+                        Task { @MainActor in state.appendLog("[pip] \(line)") }
+                    }
+                )
+            } catch {
+                await handleCancellationOrFailure(error: error, model: model, state: state)
+                return
             }
-            return
+
+            if pipExitCode != 0 {
+                await MainActor.run {
+                    state.trainingStatus = .failed(reason: "pip install failed (exit code \(pipExitCode))")
+                    model.status = .designed
+                    ModelStore.saveModel(model)
+                }
+                return
+            }
+
+            // Mark deps as installed
+            FileManager.default.createFile(atPath: depsMarker.path, contents: nil)
         }
 
         // Run training using venv python

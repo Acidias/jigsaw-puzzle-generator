@@ -288,27 +288,26 @@ struct ModelDetailView: View {
         }
     }
 
+    private var trainingLogText: String {
+        modelState.trainingLog.joined(separator: "\n")
+    }
+
     private var trainingLogView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(Array(modelState.trainingLog.enumerated()), id: \.offset) { index, line in
-                        Text(line)
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .id(index)
-                    }
-                }
-                .padding(6)
+                Text(trainingLogText)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+                    .id("log-bottom")
             }
             .frame(maxHeight: 200)
             .background(Color(nsColor: .textBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .onChange(of: modelState.trainingLog.count) { _, _ in
-                if let last = modelState.trainingLog.indices.last {
-                    proxy.scrollTo(last, anchor: .bottom)
-                }
+                proxy.scrollTo("log-bottom", anchor: .bottom)
             }
         }
     }
