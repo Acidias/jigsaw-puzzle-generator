@@ -238,11 +238,18 @@ enum ModelStore {
             )
         }
 
+        // Read training script from disk if available
+        let scriptPath = modelDirectory(for: model.id)
+            .appendingPathComponent("training")
+            .appendingPathComponent("train.py")
+        let trainingScript = try? String(contentsOf: scriptPath, encoding: .utf8)
+
         return TrainingReport(
             model: modelSection,
             architecture: archSection,
             dataset: datasetSection,
-            results: resultsSection
+            results: resultsSection,
+            trainingScript: trainingScript
         )
     }
 
@@ -267,6 +274,7 @@ struct TrainingReport: Codable {
     let architecture: ArchitectureSection
     let dataset: DatasetSection?
     let results: ResultsSection?
+    let trainingScript: String?
 
     struct ModelSection: Codable {
         let id: String
