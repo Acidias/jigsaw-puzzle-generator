@@ -100,14 +100,53 @@ enum TrainingRunner {
 
         let env = buildEnvironment()
 
-        // Install dependencies
+        // Create virtual environment (avoids PEP 668 "externally managed" errors)
+        let venvDir = workDir.appendingPathComponent(".venv")
+        let venvPython = venvDir.appendingPathComponent("bin/python3").path
+
+        if !FileManager.default.fileExists(atPath: venvPython) {
+            state.appendLog("Creating virtual environment...")
+            let venvExitCode: Int32
+            do {
+                venvExitCode = try await runProcess(
+                    executable: pythonPath,
+                    arguments: ["-m", "venv", venvDir.path],
+                    workingDirectory: workDir,
+                    environment: env,
+                    state: state,
+                    onStdoutLine: { line in
+                        Task { @MainActor in state.appendLog(line) }
+                    },
+                    onStderrLine: { line in
+                        Task { @MainActor in state.appendLog("[venv] \(line)") }
+                    }
+                )
+            } catch {
+                await handleCancellationOrFailure(error: error, model: model, state: state)
+                return
+            }
+
+            if venvExitCode != 0 {
+                await MainActor.run {
+                    state.trainingStatus = .failed(reason: "Failed to create virtual environment (exit code \(venvExitCode))")
+                    model.status = .designed
+                    ModelStore.saveModel(model)
+                }
+                return
+            }
+            state.appendLog("Virtual environment created")
+        } else {
+            state.appendLog("Using existing virtual environment")
+        }
+
+        // Install dependencies using venv pip
         state.trainingStatus = .installingDependencies
         state.appendLog("[pip] Installing dependencies...")
 
         let pipExitCode: Int32
         do {
             pipExitCode = try await runProcess(
-                executable: pythonPath,
+                executable: venvPython,
                 arguments: ["-m", "pip", "install", "-r", "requirements.txt"],
                 workingDirectory: workDir,
                 environment: env,
@@ -133,7 +172,7 @@ enum TrainingRunner {
             return
         }
 
-        // Run training
+        // Run training using venv python
         let totalEpochs = model.architecture.epochs
         await MainActor.run {
             state.trainingStatus = .training(epoch: 0, totalEpochs: totalEpochs)
@@ -143,7 +182,7 @@ enum TrainingRunner {
         let trainExitCode: Int32
         do {
             trainExitCode = try await runProcess(
-                executable: pythonPath,
+                executable: venvPython,
                 arguments: ["train.py"],
                 workingDirectory: workDir,
                 environment: env,
