@@ -17,4 +17,6 @@ cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/"
 cp "Sources/Resources/Info.plist" "${APP_BUNDLE}/Contents/"
 
 echo "Launching ${APP_NAME}..."
+# Kill any running instance so 'open' launches the new binary
+pkill -x "${APP_NAME}" 2>/dev/null && sleep 0.5
 open "${APP_BUNDLE}"
