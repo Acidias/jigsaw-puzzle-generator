@@ -46,8 +46,15 @@ struct ModelDetailView: View {
         return model.metrics
     }
 
+    /// True when this model is actively training (in-progress states).
     private var isTrainingThisModel: Bool {
         modelState.trainingModelID == model.id && modelState.isTraining
+    }
+
+    /// True when this model has a training session (active or just finished/failed/cancelled).
+    /// Used to keep the log visible after terminal states.
+    private var hasTrainingSession: Bool {
+        modelState.trainingModelID == model.id && !modelState.trainingLog.isEmpty
     }
 
     // MARK: - Header
@@ -126,6 +133,9 @@ struct ModelDetailView: View {
             VStack(spacing: 12) {
                 if isTrainingThisModel {
                     activeTrainingView
+                } else if hasTrainingSession {
+                    // Terminal state (failed/cancelled/completed) - keep log visible
+                    terminalTrainingView
                 } else if model.status == .trained {
                     trainedView
                 } else {
@@ -217,6 +227,49 @@ struct ModelDetailView: View {
                 .foregroundStyle(.secondary)
         default:
             EmptyView()
+        }
+    }
+
+    private var terminalTrainingView: some View {
+        VStack(spacing: 12) {
+            // Status message
+            HStack {
+                switch modelState.trainingStatus {
+                case .failed(let reason):
+                    Label("Training failed: \(reason)", systemImage: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                case .cancelled:
+                    Label("Training cancelled", systemImage: "stop.circle.fill")
+                        .foregroundStyle(.orange)
+                case .completed:
+                    Label("Training complete", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                default:
+                    EmptyView()
+                }
+                Spacer()
+                Button {
+                    modelState.clearTrainingState()
+                } label: {
+                    Label("Dismiss", systemImage: "xmark")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            // Log viewer (persisted from the session)
+            trainingLogView
+
+            // Retry button for failures
+            if case .failed = modelState.trainingStatus {
+                Button {
+                    modelState.clearTrainingState()
+                    startTraining()
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 

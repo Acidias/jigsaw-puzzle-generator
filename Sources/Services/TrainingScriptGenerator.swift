@@ -432,35 +432,35 @@ enum TrainingScriptGenerator {
         case .auto:
             return """
             if torch.backends.mps.is_available():
-                    DEVICE = torch.device("mps")
-                elif torch.cuda.is_available():
-                    DEVICE = torch.device("cuda")
-                else:
-                    DEVICE = torch.device("cpu")
-                print(f"Using device: {DEVICE}")
+                DEVICE = torch.device("mps")
+            elif torch.cuda.is_available():
+                DEVICE = torch.device("cuda")
+            else:
+                DEVICE = torch.device("cpu")
+            print(f"Using device: {DEVICE}")
             """
         case .mps:
             return """
             if torch.backends.mps.is_available():
-                    DEVICE = torch.device("mps")
-                else:
-                    print("Warning: MPS not available, falling back to CPU")
-                    DEVICE = torch.device("cpu")
-                print(f"Using device: {DEVICE}")
+                DEVICE = torch.device("mps")
+            else:
+                print("Warning: MPS not available, falling back to CPU")
+                DEVICE = torch.device("cpu")
+            print(f"Using device: {DEVICE}")
             """
         case .cuda:
             return """
             if torch.cuda.is_available():
-                    DEVICE = torch.device("cuda")
-                else:
-                    print("Warning: CUDA not available, falling back to CPU")
-                    DEVICE = torch.device("cpu")
-                print(f"Using device: {DEVICE}")
+                DEVICE = torch.device("cuda")
+            else:
+                print("Warning: CUDA not available, falling back to CPU")
+                DEVICE = torch.device("cpu")
+            print(f"Using device: {DEVICE}")
             """
         case .cpu:
             return """
             DEVICE = torch.device("cpu")
-                print(f"Using device: {DEVICE}")
+            print(f"Using device: {DEVICE}")
             """
         }
     }
