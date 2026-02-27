@@ -223,14 +223,12 @@ enum AutoMLRunner {
         }
 
         // Force auto device for cloud (CUDA detection)
-        var cloudConfig = study.configuration
-        cloudConfig.baseArchitecture.devicePreference = .auto
+        study.configuration.baseArchitecture.devicePreference = .auto
 
-        let cloudStudy = study
         // Write scripts
         do {
             try AutoMLScriptGenerator.writeTrainingFiles(
-                study: cloudStudy,
+                study: study,
                 datasetPath: "./dataset",
                 to: localWorkDir
             )
