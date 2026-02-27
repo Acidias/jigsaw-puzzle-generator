@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 
 /// Executes chat tool calls against the app's live data.
@@ -12,7 +13,7 @@ enum ChatToolExecutor {
         modelState: ModelState,
         datasetState: DatasetState,
         appState: AppState
-    ) -> (String, [ToolResultImage]) {
+    ) async -> (String, [ToolResultImage]) {
         let args = parseArguments(arguments)
 
         switch toolName {
@@ -67,6 +68,39 @@ enum ChatToolExecutor {
             let imageName = args["image_name"] as? String
             let count = min((args["count"] as? Int) ?? 4, 8)
             return getPieceImages(projectID: projectID, cutID: cutID, imageName: imageName, count: count, appState: appState)
+
+        // Write tools
+        case "create_model":
+            guard let presetID = args["preset_id"] as? String else {
+                return (errorResult("Missing required parameter: preset_id"), [])
+            }
+            guard let datasetID = args["dataset_id"] as? String else {
+                return (errorResult("Missing required parameter: dataset_id"), [])
+            }
+            guard let name = args["name"] as? String else {
+                return (errorResult("Missing required parameter: name"), [])
+            }
+            let notes = args["notes"] as? String
+            return (createModel(presetID: presetID, datasetID: datasetID, name: name, notes: notes, modelState: modelState, datasetState: datasetState), [])
+        case "read_training_script":
+            guard let modelID = args["model_id"] as? String else {
+                return (errorResult("Missing required parameter: model_id"), [])
+            }
+            return (readTrainingScript(modelID: modelID, modelState: modelState, datasetState: datasetState), [])
+        case "update_training_script":
+            guard let modelID = args["model_id"] as? String else {
+                return (errorResult("Missing required parameter: model_id"), [])
+            }
+            guard let script = args["script"] as? String else {
+                return (errorResult("Missing required parameter: script"), [])
+            }
+            return (updateTrainingScript(modelID: modelID, script: script, modelState: modelState), [])
+        case "start_training":
+            guard let modelID = args["model_id"] as? String else {
+                return (errorResult("Missing required parameter: model_id"), [])
+            }
+            return (startTraining(modelID: modelID, modelState: modelState, datasetState: datasetState), [])
+
         default:
             return (errorResult("Unknown tool: \(toolName)"), [])
         }
@@ -116,7 +150,200 @@ enum ChatToolExecutor {
         )
     }
 
-    // MARK: - New Tool Implementations
+    // MARK: - Write Tool Implementations
+
+    private static func createModel(
+        presetID: String,
+        datasetID: String,
+        name: String,
+        notes: String?,
+        modelState: ModelState,
+        datasetState: DatasetState
+    ) -> String {
+        guard let presetUUID = UUID(uuidString: presetID),
+              let preset = modelState.presets.first(where: { $0.id == presetUUID }) else {
+            return errorResult("Preset not found with ID: \(presetID)")
+        }
+
+        guard let datasetUUID = UUID(uuidString: datasetID),
+              let dataset = datasetState.datasets.first(where: { $0.id == datasetUUID }) else {
+            return errorResult("Dataset not found with ID: \(datasetID)")
+        }
+
+        // Resolve architecture (override inputSize from dataset canvas size)
+        var architecture = preset.architecture
+        let canvasSize = Int(ceil(Double(dataset.configuration.pieceSize) * 1.75))
+        architecture.inputSize = canvasSize
+
+        let model = SiameseModel(
+            name: name,
+            sourceDatasetID: dataset.id,
+            sourceDatasetName: dataset.name,
+            architecture: architecture,
+            sourcePresetName: preset.name,
+            notes: notes ?? ""
+        )
+        modelState.addModel(model)
+
+        // Generate initial train.py
+        let workDir = ModelStore.modelDirectory(for: model.id).appendingPathComponent("training")
+        let datasetDir = DatasetStore.datasetDirectory(for: dataset.id)
+        do {
+            let hash = try TrainingScriptGenerator.writeTrainingFiles(
+                model: model,
+                datasetPath: datasetDir.path,
+                to: workDir
+            )
+            model.scriptHash = hash
+            ModelStore.saveModel(model)
+        } catch {
+            // Model still created, just no script yet
+            print("ChatToolExecutor: Failed to write initial training files: \(error)")
+        }
+
+        let result: [String: Any] = [
+            "model_id": model.id.uuidString,
+            "name": model.name,
+            "preset": preset.name,
+            "dataset": dataset.name,
+            "architecture": "\(architecture.convBlocks.count) blocks, \(architecture.embeddingDimension)-d, \(architecture.comparisonMethod.shortName)",
+            "input_size": architecture.inputSize,
+            "status": model.status.rawValue,
+            "script_hash": model.scriptHash.map { String($0.prefix(8)) } as Any,
+        ]
+
+        return jsonString(result)
+    }
+
+    private static func readTrainingScript(
+        modelID: String,
+        modelState: ModelState,
+        datasetState: DatasetState
+    ) -> String {
+        guard let uuid = UUID(uuidString: modelID),
+              let model = modelState.models.first(where: { $0.id == uuid }) else {
+            return errorResult("Model not found with ID: \(modelID)")
+        }
+
+        let workDir = ModelStore.modelDirectory(for: model.id).appendingPathComponent("training")
+        let scriptURL = workDir.appendingPathComponent("train.py")
+
+        // If script exists, read it
+        if FileManager.default.fileExists(atPath: scriptURL.path),
+           let content = try? String(contentsOf: scriptURL, encoding: .utf8) {
+            return jsonString([
+                "model_id": model.id.uuidString,
+                "model_name": model.name,
+                "script": content,
+                "script_hash": model.scriptHash.map { String($0.prefix(8)) } as Any,
+            ] as [String: Any])
+        }
+
+        // Generate script if missing
+        let datasetDir = DatasetStore.datasetDirectory(for: model.sourceDatasetID)
+        do {
+            let hash = try TrainingScriptGenerator.writeTrainingFiles(
+                model: model,
+                datasetPath: datasetDir.path,
+                to: workDir
+            )
+            model.scriptHash = hash
+            ModelStore.saveModel(model)
+
+            let content = try String(contentsOf: scriptURL, encoding: .utf8)
+            return jsonString([
+                "model_id": model.id.uuidString,
+                "model_name": model.name,
+                "script": content,
+                "script_hash": String(hash.prefix(8)),
+                "note": "Script was generated fresh (none existed on disk).",
+            ] as [String: Any])
+        } catch {
+            return errorResult("Failed to generate training script: \(error.localizedDescription)")
+        }
+    }
+
+    private static func updateTrainingScript(
+        modelID: String,
+        script: String,
+        modelState: ModelState
+    ) -> String {
+        guard let uuid = UUID(uuidString: modelID),
+              let model = modelState.models.first(where: { $0.id == uuid }) else {
+            return errorResult("Model not found with ID: \(modelID)")
+        }
+
+        let workDir = ModelStore.modelDirectory(for: model.id).appendingPathComponent("training")
+        let scriptURL = workDir.appendingPathComponent("train.py")
+
+        do {
+            try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+            try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        } catch {
+            return errorResult("Failed to write train.py: \(error.localizedDescription)")
+        }
+
+        // Compute new hash
+        let data = Data(script.utf8)
+        let digest = SHA256.hash(data: data)
+        let hash = digest.map { String(format: "%02x", $0) }.joined()
+        model.scriptHash = hash
+        ModelStore.saveModel(model)
+
+        return jsonString([
+            "model_id": model.id.uuidString,
+            "model_name": model.name,
+            "script_hash": String(hash.prefix(8)),
+            "message": "Training script updated successfully.",
+        ])
+    }
+
+    private static func startTraining(
+        modelID: String,
+        modelState: ModelState,
+        datasetState: DatasetState
+    ) -> String {
+        guard let uuid = UUID(uuidString: modelID),
+              let model = modelState.models.first(where: { $0.id == uuid }) else {
+            return errorResult("Model not found with ID: \(modelID)")
+        }
+
+        guard let dataset = datasetState.datasets.first(where: { $0.id == model.sourceDatasetID }) else {
+            return errorResult("Dataset not found for model (ID: \(model.sourceDatasetID.uuidString))")
+        }
+
+        guard !modelState.isTraining else {
+            return errorResult("Another training session is already in progress.")
+        }
+
+        guard TrainingRunner.findPython() != nil else {
+            return errorResult("python3 not found. Install Python 3 to enable local training.")
+        }
+
+        // Check if a custom script exists on disk
+        let workDir = ModelStore.modelDirectory(for: model.id).appendingPathComponent("training")
+        let scriptURL = workDir.appendingPathComponent("train.py")
+        let hasCustomScript = FileManager.default.fileExists(atPath: scriptURL.path)
+
+        // Fire off training in a detached task (returns immediately)
+        Task.detached { @MainActor in
+            await TrainingRunner.train(
+                model: model,
+                dataset: dataset,
+                state: modelState,
+                skipScriptGeneration: hasCustomScript
+            )
+        }
+
+        return jsonString([
+            "model_id": model.id.uuidString,
+            "model_name": model.name,
+            "message": "Training started. Monitor progress in the model detail view.",
+            "using_custom_script": hasCustomScript,
+        ])
+    }
+
+    // MARK: - Vision Tool Implementations
 
     private static func getSamplePairs(
         datasetID: String,

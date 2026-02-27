@@ -37,6 +37,11 @@ enum LLMService {
     - **Native resolution**: skips the CrispAlpha resize step.
     - **Mixed precision (AMP)**: uses FP16 on CUDA for faster training.
 
+    You also have write tools that can create models, read/modify training scripts, and start training. \
+    When modifying training scripts, always preserve the metrics.json output format (the app parses it \
+    to import results). You can freely change hyperparameters, the training loop, data augmentation, \
+    loss functions, or any other aspect of the training pipeline.
+
     Use the available tools proactively to look up data before answering questions. \
     Always use tools rather than guessing about the user's models, datasets, or metrics. \
     Use British English in your responses (colour, favourite, analyse, etc.).

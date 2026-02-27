@@ -184,6 +184,7 @@ struct ContentView: View {
             datasetState.loadDatasets()
             modelState.loadPresets()
             modelState.loadModels()
+            chatState.loadSession()
         }
     }
 

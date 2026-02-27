@@ -102,7 +102,7 @@ struct ChatToolResult: Identifiable, Codable {
     var images: [ToolResultImage] = []
 }
 
-struct ChatMessage: Identifiable {
+struct ChatMessage: Identifiable, Codable {
     let id: UUID
     let role: ChatRole
     var text: String
@@ -127,6 +127,41 @@ struct ChatMessage: Identifiable {
         self.toolCalls = toolCalls
         self.toolResults = toolResults
         self.isStreaming = isStreaming
+    }
+
+    // Exclude isStreaming from persistence
+    enum CodingKeys: String, CodingKey {
+        case id, role, text, timestamp, toolCalls, toolResults
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        role = try container.decode(ChatRole.self, forKey: .role)
+        text = try container.decode(String.self, forKey: .text)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        toolCalls = try container.decodeIfPresent([ChatToolCall].self, forKey: .toolCalls) ?? []
+        toolResults = try container.decodeIfPresent([ChatToolResult].self, forKey: .toolResults) ?? []
+        isStreaming = false  // Always false on load
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(role, forKey: .role)
+        try container.encode(text, forKey: .text)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(toolCalls, forKey: .toolCalls)
+        // Strip images from tool results before saving (too large to persist)
+        let strippedResults = toolResults.map { result in
+            ChatToolResult(
+                id: result.id,
+                toolCallID: result.toolCallID,
+                toolName: result.toolName,
+                content: result.content
+            )
+        }
+        try container.encode(strippedResults, forKey: .toolResults)
     }
 }
 
@@ -178,6 +213,7 @@ class ChatState: ObservableObject {
     func addUserMessage(_ text: String) {
         let message = ChatMessage(role: .user, text: text)
         messages.append(message)
+        saveSession()
     }
 
     func addAssistantMessage(streaming: Bool = true) -> UUID {
@@ -195,6 +231,7 @@ class ChatState: ObservableObject {
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].isStreaming = false
         messages[index].toolCalls = toolCalls
+        saveSession()
     }
 
     func addToolResult(_ result: ChatToolResult) {
@@ -204,10 +241,48 @@ class ChatState: ObservableObject {
             toolResults: [result]
         )
         messages.append(message)
+        saveSession()
     }
 
     func clearMessages() {
         messages.removeAll()
         error = nil
+        saveSession()
+    }
+
+    // MARK: - Session Persistence
+
+    private static var sessionDirectory: URL {
+        ProjectStore.appSupportDirectory.appendingPathComponent("chat")
+    }
+
+    private static var sessionURL: URL {
+        sessionDirectory.appendingPathComponent("session.json")
+    }
+
+    func saveSession() {
+        let url = Self.sessionURL
+        do {
+            try FileManager.default.createDirectory(at: Self.sessionDirectory, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(messages)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            print("ChatState: Failed to save session: \(error)")
+        }
+    }
+
+    func loadSession() {
+        let url = Self.sessionURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            messages = try decoder.decode([ChatMessage].self, from: data)
+        } catch {
+            print("ChatState: Failed to load session: \(error)")
+        }
     }
 }

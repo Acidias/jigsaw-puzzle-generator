@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Manages automated model training by running Python as a subprocess.
@@ -49,8 +50,9 @@ enum TrainingRunner {
     // MARK: - Training
 
     /// Main entry point - orchestrates the full training pipeline.
+    /// When `skipScriptGeneration` is true, uses the existing train.py on disk (for custom scripts).
     @MainActor
-    static func train(model: SiameseModel, dataset: PuzzleDataset, state: ModelState) async {
+    static func train(model: SiameseModel, dataset: PuzzleDataset, state: ModelState, skipScriptGeneration: Bool = false) async {
         // Validate python
         guard let pythonPath = findPython() else {
             state.trainingStatus = .failed(reason: "python3 not found")
@@ -84,20 +86,38 @@ enum TrainingRunner {
         }
 
         // Write train.py + requirements.txt pointing at internal dataset
-        do {
-            let hash = try TrainingScriptGenerator.writeTrainingFiles(
-                model: model,
-                datasetPath: datasetDir.path,
-                to: workDir
-            )
-            model.scriptHash = hash
-            ModelStore.saveModel(model)
-            state.appendLog("Wrote train.py and requirements.txt")
-        } catch {
-            state.trainingStatus = .failed(reason: "Failed to write training files: \(error.localizedDescription)")
-            model.status = .designed
-            ModelStore.saveModel(model)
-            return
+        if skipScriptGeneration {
+            // Use existing custom script - just compute its hash
+            let scriptURL = workDir.appendingPathComponent("train.py")
+            guard FileManager.default.fileExists(atPath: scriptURL.path) else {
+                state.trainingStatus = .failed(reason: "skipScriptGeneration is true but no train.py found on disk")
+                model.status = .designed
+                ModelStore.saveModel(model)
+                return
+            }
+            if let scriptContent = try? String(contentsOf: scriptURL, encoding: .utf8) {
+                let data = Data(scriptContent.utf8)
+                let digest = SHA256.hash(data: data)
+                model.scriptHash = digest.map { String(format: "%02x", $0) }.joined()
+                ModelStore.saveModel(model)
+            }
+            state.appendLog("Using existing custom train.py")
+        } else {
+            do {
+                let hash = try TrainingScriptGenerator.writeTrainingFiles(
+                    model: model,
+                    datasetPath: datasetDir.path,
+                    to: workDir
+                )
+                model.scriptHash = hash
+                ModelStore.saveModel(model)
+                state.appendLog("Wrote train.py and requirements.txt")
+            } catch {
+                state.trainingStatus = .failed(reason: "Failed to write training files: \(error.localizedDescription)")
+                model.status = .designed
+                ModelStore.saveModel(model)
+                return
+            }
         }
 
         let env = buildEnvironment()

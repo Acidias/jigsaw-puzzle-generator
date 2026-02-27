@@ -179,6 +179,41 @@ enum ChatTools {
                 ChatToolParam(name: "count", type: "integer", description: "Number of pieces to return (default: 4, max: 8)", isRequired: false),
             ]
         ),
+
+        // MARK: - Write Tools
+
+        ChatToolDefinition(
+            name: "create_model",
+            description: "Create a new Siamese model from an architecture preset and dataset. Generates the initial train.py script. The model appears in the sidebar immediately.",
+            parameters: [
+                ChatToolParam(name: "preset_id", description: "The UUID of the architecture preset to use"),
+                ChatToolParam(name: "dataset_id", description: "The UUID of the dataset to train on"),
+                ChatToolParam(name: "name", description: "Name for the new model"),
+                ChatToolParam(name: "notes", description: "Optional notes/description for the model", isRequired: false),
+            ]
+        ),
+        ChatToolDefinition(
+            name: "read_training_script",
+            description: "Read the current train.py script for a model. If no script exists yet, generates one from the model's architecture. Returns the full Python source code.",
+            parameters: [
+                ChatToolParam(name: "model_id", description: "The UUID of the model whose training script to read"),
+            ]
+        ),
+        ChatToolDefinition(
+            name: "update_training_script",
+            description: "Replace the train.py script for a model with new content. Use this to modify hyperparameters, change the training loop, add data augmentation, etc. IMPORTANT: preserve the metrics.json output format so the app can import results.",
+            parameters: [
+                ChatToolParam(name: "model_id", description: "The UUID of the model whose training script to update"),
+                ChatToolParam(name: "script", description: "The full Python source code for the new train.py"),
+            ]
+        ),
+        ChatToolDefinition(
+            name: "start_training",
+            description: "Start local training for a model. Training runs asynchronously - this returns immediately. Requires python3 to be available. If a custom train.py exists, it will be used as-is (not regenerated).",
+            parameters: [
+                ChatToolParam(name: "model_id", description: "The UUID of the model to train"),
+            ]
+        ),
     ]
 
     static func claudeTools() -> [[String: Any]] {
