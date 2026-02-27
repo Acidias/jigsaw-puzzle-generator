@@ -131,6 +131,19 @@ class ModelState: ObservableObject {
         presets.removeAll { $0.id == preset.id }
     }
 
+    func duplicateModel(_ model: SiameseModel) -> SiameseModel {
+        let copy = SiameseModel(
+            name: "\(model.name) Copy",
+            sourceDatasetID: model.sourceDatasetID,
+            sourceDatasetName: model.sourceDatasetName,
+            architecture: model.architecture,
+            sourcePresetName: model.sourcePresetName,
+            notes: model.notes
+        )
+        addModel(copy)
+        return copy
+    }
+
     func duplicatePreset(_ preset: ArchitecturePreset) -> ArchitecturePreset {
         let copy = ArchitecturePreset(
             name: "\(preset.name) Copy",

@@ -308,6 +308,11 @@ struct SidebarView: View {
             promptRenameModel(model)
         }
 
+        Button("Duplicate") {
+            let copy = modelState.duplicateModel(model)
+            selection = .model(copy.id)
+        }
+
         Divider()
 
         Button("Delete") {
