@@ -725,6 +725,14 @@ struct ModelDetailView: View {
             if let std = metrics.standardisedResults, !std.isEmpty {
                 standardisedResultsView(std)
             }
+
+            if let ranking = metrics.rankingMetrics {
+                rankingMetricsView(ranking)
+            }
+
+            if let runInfo = metrics.trainingRunInfo {
+                trainingRunInfoView(runInfo)
+            }
         }
     }
 
@@ -736,6 +744,8 @@ struct ModelDetailView: View {
                 HStack(spacing: 0) {
                     Text("Target P")
                         .frame(width: 70, alignment: .leading)
+                    Text("Status")
+                        .frame(width: 80)
                     Text("Threshold")
                         .frame(width: 75)
                     Text("Precision")
@@ -755,20 +765,30 @@ struct ModelDetailView: View {
                 Divider()
 
                 ForEach(Array(results.enumerated()), id: \.offset) { _, r in
+                    let achieved = r.status == "achieved"
                     HStack(spacing: 0) {
-                        Text(String(format: ">=%.0f%%", r.precisionTarget * 100))
+                        Text(">=\(r.precisionTarget)%")
                             .frame(width: 70, alignment: .leading)
-                        Text(String(format: "%.2f", r.threshold))
+                        Text(achieved ? "Achieved" : "Unachievable")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(achieved ? .green : .red)
+                            .frame(width: 80)
+                        Text(r.threshold.map { String(format: "%.2f", $0) } ?? "N/A")
+                            .foregroundStyle(achieved ? .primary : .secondary)
                             .frame(width: 75)
-                        Text(String(format: "%.3f", r.precision))
+                        Text(r.precision.map { String(format: "%.3f", $0) } ?? "N/A")
+                            .foregroundStyle(achieved ? .primary : .secondary)
                             .frame(width: 75)
-                        Text(String(format: "%.3f", r.recall))
-                            .fontWeight(.medium)
-                            .foregroundStyle(.orange)
+                        Text(r.recall.map { String(format: "%.3f", $0) } ?? "N/A")
+                            .fontWeight(achieved ? .medium : .regular)
+                            .foregroundStyle(achieved ? .orange : .secondary)
                             .frame(width: 75)
-                        Text(String(format: "%.3f", r.f1))
+                        Text(r.f1.map { String(format: "%.3f", $0) } ?? "N/A")
+                            .foregroundStyle(achieved ? .primary : .secondary)
                             .frame(width: 60)
-                        Text(String(format: "%.1f%%", r.accuracy * 100))
+                        Text(r.accuracy.map { String(format: "%.1f%%", $0 * 100) } ?? "N/A")
+                            .foregroundStyle(achieved ? .primary : .secondary)
                             .frame(width: 75)
                     }
                     .font(.callout.monospacedDigit())
@@ -781,6 +801,35 @@ struct ModelDetailView: View {
                 }
             }
             .padding(4)
+        }
+    }
+
+    // MARK: - Ranking Metrics
+
+    private func rankingMetricsView(_ ranking: RankingMetrics) -> some View {
+        GroupBox("Ranking Metrics") {
+            HStack(spacing: 16) {
+                statBadge(value: String(format: "%.3f", ranking.recallAt1), label: "R@1", colour: .purple)
+                statBadge(value: String(format: "%.3f", ranking.recallAt5), label: "R@5", colour: .purple)
+                statBadge(value: String(format: "%.3f", ranking.recallAt10), label: "R@10", colour: .purple)
+            }
+            .padding(8)
+        }
+    }
+
+    // MARK: - Training Run Info
+
+    private func trainingRunInfoView(_ info: TrainingRunInfo) -> some View {
+        GroupBox("Training Run") {
+            HStack(spacing: 16) {
+                statBadge(value: "\(info.batchSizeUsed)", label: "Batch Size", colour: .teal)
+                statBadge(value: info.ampEnabled ? "On" : "Off", label: "AMP", colour: info.ampEnabled ? .green : .secondary)
+                statBadge(value: "\(info.inputSizeUsed)px", label: "Input Size", colour: .teal)
+                if let pps = info.pairsPerSecond {
+                    statBadge(value: String(format: "%.1f", pps), label: "Pairs/s", colour: .teal)
+                }
+            }
+            .padding(8)
         }
     }
 

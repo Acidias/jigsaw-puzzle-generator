@@ -176,6 +176,16 @@ struct ArchitectureEditorView: View {
                     }
                 }
                 .font(.callout)
+
+                Divider()
+
+                Toggle("Use Native Resolution", isOn: $architecture.useNativeResolution)
+                    .font(.callout)
+                    .help("Skip resizing - use pieces at their native pixel size")
+
+                Toggle("Mixed Precision (AMP)", isOn: $architecture.useMixedPrecision)
+                    .font(.callout)
+                    .help("Use FP16 on CUDA for faster training")
             }
             .padding(8)
         }

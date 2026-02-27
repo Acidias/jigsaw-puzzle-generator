@@ -173,7 +173,9 @@ enum ModelStore {
             epochs: arch.epochs,
             inputSize: arch.inputSize,
             devicePreference: arch.devicePreference.rawValue,
-            flattenedSize: arch.flattenedSize
+            flattenedSize: arch.flattenedSize,
+            useNativeResolution: arch.useNativeResolution,
+            useMixedPrecision: arch.useMixedPrecision
         )
 
         var datasetSection: TrainingReport.DatasetSection? = nil
@@ -235,7 +237,9 @@ enum ModelStore {
                 confusionMatrix: metrics.confusionMatrix,
                 perCategoryResults: metrics.perCategoryResults,
                 epochHistory: epochHistory,
-                standardisedResults: metrics.standardisedResults
+                standardisedResults: metrics.standardisedResults,
+                rankingMetrics: metrics.rankingMetrics,
+                trainingRunInfo: metrics.trainingRunInfo
             )
         }
 
@@ -314,6 +318,8 @@ struct TrainingReport: Codable {
         let inputSize: Int
         let devicePreference: String
         let flattenedSize: Int
+        let useNativeResolution: Bool
+        let useMixedPrecision: Bool
     }
 
     struct DatasetSection: Codable {
@@ -354,6 +360,8 @@ struct TrainingReport: Codable {
         let perCategoryResults: [String: CategoryResult]?
         let epochHistory: [EpochEntry]
         let standardisedResults: [StandardisedResult]?
+        let rankingMetrics: RankingMetrics?
+        let trainingRunInfo: TrainingRunInfo?
     }
 }
 

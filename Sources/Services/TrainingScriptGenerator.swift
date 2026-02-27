@@ -49,6 +49,9 @@ enum TrainingScriptGenerator {
         LEARNING_RATE = \(arch.learningRate)
         EMBEDDING_DIM = \(arch.embeddingDimension)
         DROPOUT = \(arch.dropout)
+        USE_NATIVE_RESOLUTION = \(arch.useNativeResolution ? "True" : "False")
+        USE_AMP = \(arch.useMixedPrecision ? "True" : "False")
+        NUM_WORKERS = min(os.cpu_count() or 1, \(arch.devicePreference == .cuda ? 8 : 4))
 
         \(generateDeviceSelectionPython(arch.devicePreference))
 
@@ -161,7 +164,7 @@ enum TrainingScriptGenerator {
 
         # ── Training ───────────────────────────────────────────────────
 
-        def run_train_epoch(model, loader, criterion, optimiser):
+        def run_train_epoch_amp(model, loader, criterion, optimiser, scaler, use_amp):
             model.train()
             total_loss = 0.0
             correct = 0
@@ -171,13 +174,15 @@ enum TrainingScriptGenerator {
                 left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
 
                 optimiser.zero_grad()
-                outputs = model(left, right).squeeze()
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimiser.step()
+                with torch.amp.autocast("cuda", enabled=use_amp):
+                    outputs = model(left, right).squeeze()
+                    loss = criterion(outputs, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optimiser)
+                scaler.update()
 
                 total_loss += loss.item() * labels.size(0)
-                preds = (outputs > 0.0).float()
+                preds = (outputs.detach() > 0.0).float()
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
 
@@ -228,10 +233,11 @@ enum TrainingScriptGenerator {
             model.eval()
 
             use_workers = DEVICE.type == "cuda"
+            nw = NUM_WORKERS if use_workers else 0
             loader_kwargs = dict(
-                num_workers=4 if use_workers else 0,
+                num_workers=nw,
                 pin_memory=use_workers,
-                persistent_workers=use_workers,
+                persistent_workers=(nw > 0),
             )
             loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, **loader_kwargs)
 
@@ -279,7 +285,8 @@ enum TrainingScriptGenerator {
 
 
         def find_optimal_threshold(model, loader):
-            \"\"\"Sweep logit thresholds on the validation set to maximise F1.\"\"\"
+            \"\"\"Sweep logit thresholds on the validation set to maximise F1.
+            Uses sorted unique logits as thresholds for exact optimality.\"\"\"
             model.eval()
             all_logits = []
             all_labels = []
@@ -297,12 +304,14 @@ enum TrainingScriptGenerator {
             best_threshold = 0.0
             best_f1 = 0.0
 
-            for t in np.arange(-3.0, 3.05, 0.05):
+            for t in np.sort(np.unique(all_logits)):
                 preds = (all_logits > t).astype(float)
                 tp = ((preds == 1) & (all_labels == 1)).sum()
                 fp = ((preds == 1) & (all_labels == 0)).sum()
                 fn = ((preds == 0) & (all_labels == 1)).sum()
-                prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+                if (tp + fp) == 0:
+                    continue  # No predicted positives - skip
+                prec = tp / (tp + fp)
                 rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
                 f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
                 if f1 > best_f1:
@@ -313,8 +322,11 @@ enum TrainingScriptGenerator {
 
 
         def evaluate_standardised(model, valid_loader, test_loader, criterion,
-                                  targets=(0.5, 0.6, 0.7, 0.8)):
-            \"\"\"Find thresholds on validation set at fixed precision targets, then test.\"\"\"
+                                  targets=(50, 60, 70, 80)):
+            \"\"\"Find thresholds on validation set at fixed precision targets, then test.
+            Uses sorted unique logits for exact threshold search.
+            Targets are integer percentages (e.g. 70 = 70% precision).
+            When a target is unachievable, emits status='unachievable' with null metrics.\"\"\"
             model.eval()
             all_logits = []
             all_labels = []
@@ -328,42 +340,120 @@ enum TrainingScriptGenerator {
 
             all_logits = np.array(all_logits)
             all_labels = np.array(all_labels)
+            thresholds = np.sort(np.unique(all_logits))
 
             # For each precision target, find the lowest threshold (highest recall)
             # that achieves at least that precision on the validation set
-            target_thresholds = []
-            for target_prec in targets:
+            target_thresholds = {}
+            for target_pct in targets:
+                target_prec = target_pct / 100.0
                 best_recall = -1.0
                 best_t = None
-                best_p = None
-                for t in np.arange(-3.0, 3.05, 0.05):
+                for t in thresholds:
                     preds = (all_logits > t).astype(float)
                     tp = ((preds == 1) & (all_labels == 1)).sum()
                     fp = ((preds == 1) & (all_labels == 0)).sum()
                     fn = ((preds == 0) & (all_labels == 1)).sum()
-                    prec = tp / (tp + fp) if (tp + fp) > 0 else 1.0
+                    if (tp + fp) == 0:
+                        continue  # No predicted positives - can't measure precision
+                    prec = tp / (tp + fp)
                     rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
                     if prec >= target_prec and rec > best_recall:
                         best_recall = float(rec)
                         best_t = float(t)
-                        best_p = float(prec)
-                if best_t is not None:
-                    target_thresholds.append((target_prec, best_t, best_p, best_recall))
+                target_thresholds[target_pct] = best_t
 
             # Apply each threshold to the test set for fair cross-model comparison
             results = []
-            for target_prec, threshold, _, _ in target_thresholds:
+            for target_pct in targets:
+                threshold = target_thresholds[target_pct]
+                if threshold is None:
+                    results.append({
+                        "precisionTarget": target_pct,
+                        "status": "unachievable",
+                        "threshold": None,
+                        "precision": None,
+                        "recall": None,
+                        "accuracy": None,
+                        "f1": None,
+                        "predictedPositives": None,
+                        "truePositives": None,
+                        "falsePositives": None,
+                        "falseNegatives": None,
+                        "trueNegatives": None,
+                    })
+                    continue
+
                 _, test_acc, test_prec, test_rec, test_f1 = run_validation(
                     model, test_loader, criterion, threshold=threshold,
                 )
+                # Compute confusion counts on test set at this threshold
+                t_logits = []
+                t_labels = []
+                with torch.no_grad():
+                    for left, right, labels in test_loader:
+                        left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
+                        outputs = model(left, right).squeeze()
+                        t_logits.extend(outputs.cpu().numpy())
+                        t_labels.extend(labels.cpu().numpy())
+                t_logits = np.array(t_logits)
+                t_labels = np.array(t_labels)
+                t_preds = (t_logits > threshold).astype(float)
+                tp = int(((t_preds == 1) & (t_labels == 1)).sum())
+                fp = int(((t_preds == 1) & (t_labels == 0)).sum())
+                fn = int(((t_preds == 0) & (t_labels == 1)).sum())
+                tn = int(((t_preds == 0) & (t_labels == 0)).sum())
                 results.append({
-                    "precisionTarget": target_prec,
+                    "precisionTarget": target_pct,
+                    "status": "achieved",
                     "threshold": round(threshold, 4),
                     "precision": round(test_prec, 6),
                     "recall": round(test_rec, 6),
                     "accuracy": round(test_acc, 6),
                     "f1": round(test_f1, 6),
+                    "predictedPositives": tp + fp,
+                    "truePositives": tp,
+                    "falsePositives": fp,
+                    "falseNegatives": fn,
+                    "trueNegatives": tn,
                 })
+
+            return results
+
+
+        def compute_ranking_metrics(model, test_dataset):
+            \"\"\"Compute Recall@K ranking metrics on the test set.
+            For each positive pair, rank it among all negatives by logit similarity.
+            Recall@K = fraction of positives ranked in top K.\"\"\"
+            model.eval()
+            pos_logits = []
+            neg_logits = []
+
+            loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+            with torch.no_grad():
+                for left, right, labels in loader:
+                    left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
+                    outputs = model(left, right).squeeze()
+                    for logit, label in zip(outputs.cpu().numpy(), labels.cpu().numpy()):
+                        if label == 1:
+                            pos_logits.append(float(logit))
+                        else:
+                            neg_logits.append(float(logit))
+
+            if not pos_logits or not neg_logits:
+                return {"recallAt1": 0.0, "recallAt5": 0.0, "recallAt10": 0.0}
+
+            neg_logits = np.array(sorted(neg_logits, reverse=True))
+            results = {}
+            for k in [1, 5, 10]:
+                hits = 0
+                for p in pos_logits:
+                    # Count how many negatives score higher than this positive
+                    rank = int((neg_logits > p).sum()) + 1  # 1-indexed rank
+                    if rank <= k:
+                        hits += 1
+                key = f"recallAt{k}"
+                results[key] = round(hits / len(pos_logits), 6)
 
             return results
 
@@ -432,16 +522,28 @@ enum TrainingScriptGenerator {
             pair_augment = PairConsistentRGBAAugment(
                 brightness=0.3, contrast=0.3, saturation=0.2, grayscale_p=0.1,
             )
-            base_transform = transforms.Compose([
-                CrispAlphaResize(INPUT_SIZE),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
-            ])
-            eval_transform = transforms.Compose([
-                CrispAlphaResize(INPUT_SIZE),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
-            ])
+
+            # When using native resolution, skip resizing - pieces are already at their native size
+            if USE_NATIVE_RESOLUTION:
+                base_transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+                ])
+                eval_transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+                ])
+            else:
+                base_transform = transforms.Compose([
+                    CrispAlphaResize(INPUT_SIZE),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+                ])
+                eval_transform = transforms.Compose([
+                    CrispAlphaResize(INPUT_SIZE),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+                ])
 
             # Load datasets
             train_dataset = JigsawPairDataset(
@@ -458,11 +560,22 @@ enum TrainingScriptGenerator {
             # and macOS fork overhead outweighs any parallelism gain).
             # CUDA benefits from workers + pinned memory for async transfers.
             use_workers = DEVICE.type == "cuda"
+            nw = NUM_WORKERS if use_workers else 0
             loader_kwargs = dict(
-                num_workers=4 if use_workers else 0,
+                num_workers=nw,
                 pin_memory=use_workers,
-                persistent_workers=use_workers,
+                persistent_workers=(nw > 0),
             )
+
+            if DEVICE.type == "cuda":
+                torch.backends.cudnn.benchmark = True
+                torch.set_float32_matmul_precision("high")
+
+            # AMP (Automatic Mixed Precision) for faster training on CUDA
+            use_amp = USE_AMP and DEVICE.type == "cuda"
+            if USE_AMP and DEVICE.type != "cuda":
+                print("Warning: AMP requested but not on CUDA - disabled")
+            scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
             train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, **loader_kwargs)
             valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, **loader_kwargs)
@@ -492,10 +605,18 @@ enum TrainingScriptGenerator {
             best_valid_loss = float("inf")
             best_epoch = 0
             start_time = time.time()
+            last_pairs_per_sec = 0.0
 
             for epoch in range(1, EPOCHS + 1):
-                train_loss, train_acc = run_train_epoch(model, train_loader, criterion, optimiser)
+                epoch_start = time.time()
+                train_loss, train_acc = run_train_epoch_amp(
+                    model, train_loader, criterion, optimiser, scaler, use_amp,
+                )
                 valid_loss, valid_acc, _, _, _ = run_validation(model, valid_loader, criterion)
+                epoch_time = time.time() - epoch_start
+
+                pairs_per_sec = len(train_loader.dataset) / epoch_time if epoch_time > 0 else 0
+                last_pairs_per_sec = pairs_per_sec
 
                 metrics["trainLoss"].append({"epoch": epoch, "value": round(train_loss, 6)})
                 metrics["validLoss"].append({"epoch": epoch, "value": round(valid_loss, 6)})
@@ -518,6 +639,7 @@ enum TrainingScriptGenerator {
                     f"Train Loss: {train_loss:.4f} Acc: {train_acc:.4f} | "
                     f"Valid Loss: {valid_loss:.4f} Acc: {valid_acc:.4f}"
                     + (" *" if epoch == best_epoch else "")
+                    + f" | {pairs_per_sec:.1f} pairs/s"
                 )
                 if new_lr < old_lr:
                     print(f"  >> LR reduced: {old_lr:.6f} -> {new_lr:.6f}")
@@ -558,11 +680,19 @@ enum TrainingScriptGenerator {
             standardised = evaluate_standardised(model, valid_loader, test_loader, criterion)
             print(f"\\nStandardised operating points (test set):")
             for r in standardised:
-                print(
-                    f"  @Precision>={r['precisionTarget']:.0%}: "
-                    f"P={r['precision']:.3f} R={r['recall']:.3f} "
-                    f"F1={r['f1']:.3f} (t={r['threshold']:.2f})"
-                )
+                if r["status"] == "unachievable":
+                    print(f"  @Precision>={r['precisionTarget']}%: unachievable")
+                else:
+                    print(
+                        f"  @Precision>={r['precisionTarget']}%: "
+                        f"P={r['precision']:.3f} R={r['recall']:.3f} "
+                        f"F1={r['f1']:.3f} (t={r['threshold']:.2f})"
+                    )
+
+            # Ranking metrics
+            ranking = compute_ranking_metrics(model, test_dataset)
+            print(f"\\nRanking metrics:")
+            print(f"  R@1: {ranking['recallAt1']:.4f}  R@5: {ranking['recallAt5']:.4f}  R@10: {ranking['recallAt10']:.4f}")
 
             # Save metrics
             metrics["testLoss"] = round(test_loss, 6)
@@ -576,6 +706,13 @@ enum TrainingScriptGenerator {
             metrics["confusionMatrix"] = confusion_matrix
             metrics["perCategoryResults"] = per_category
             metrics["standardisedResults"] = standardised
+            metrics["rankingMetrics"] = ranking
+            metrics["trainingRunInfo"] = {
+                "batchSizeUsed": BATCH_SIZE,
+                "ampEnabled": use_amp,
+                "inputSizeUsed": INPUT_SIZE,
+                "pairsPerSecond": round(last_pairs_per_sec, 2),
+            }
 
             with open("metrics.json", "w") as f:
                 json.dump(metrics, f, indent=2)
