@@ -86,11 +86,18 @@ struct ChatToolCall: Identifiable, Codable {
     let arguments: String  // raw JSON string
 }
 
+struct ToolResultImage: Codable {
+    let base64Data: String
+    let mediaType: String
+    let label: String
+}
+
 struct ChatToolResult: Identifiable, Codable {
     let id: String
     let toolCallID: String
     let toolName: String
     let content: String
+    var images: [ToolResultImage] = []
 }
 
 struct ChatMessage: Identifiable {

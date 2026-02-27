@@ -49,7 +49,8 @@ enum LLMService {
     static func streamChat(
         chatState: ChatState,
         modelState: ModelState,
-        datasetState: DatasetState
+        datasetState: DatasetState,
+        appState: AppState
     ) async {
         await chatState.setStreaming(true)
         defer { Task { @MainActor in chatState.isStreaming = false } }
@@ -80,19 +81,21 @@ enum LLMService {
 
                 // Execute tool calls and append results
                 for toolCall in toolCalls {
-                    let result = await ChatToolExecutor.execute(
+                    let (resultText, resultImages) = await ChatToolExecutor.execute(
                         toolName: toolCall.name,
                         arguments: toolCall.arguments,
                         modelState: modelState,
-                        datasetState: datasetState
+                        datasetState: datasetState,
+                        appState: appState
                     )
 
-                    let toolResult = ChatToolResult(
+                    var toolResult = ChatToolResult(
                         id: UUID().uuidString,
                         toolCallID: toolCall.id,
                         toolName: toolCall.name,
-                        content: result
+                        content: resultText
                     )
+                    toolResult.images = resultImages
                     await chatState.addToolResult(toolResult)
                 }
 
@@ -244,16 +247,43 @@ enum LLMService {
 
             case .toolResult:
                 for result in msg.toolResults {
-                    messages.append([
-                        "role": "user",
-                        "content": [
-                            [
-                                "type": "tool_result",
-                                "tool_use_id": result.toolCallID,
-                                "content": result.content,
-                            ] as [String: Any]
-                        ],
-                    ])
+                    if result.images.isEmpty {
+                        messages.append([
+                            "role": "user",
+                            "content": [
+                                [
+                                    "type": "tool_result",
+                                    "tool_use_id": result.toolCallID,
+                                    "content": result.content,
+                                ] as [String: Any]
+                            ],
+                        ])
+                    } else {
+                        // Build multi-part content with text + images
+                        var contentParts: [[String: Any]] = [
+                            ["type": "text", "text": result.content],
+                        ]
+                        for image in result.images {
+                            contentParts.append([
+                                "type": "image",
+                                "source": [
+                                    "type": "base64",
+                                    "media_type": image.mediaType,
+                                    "data": image.base64Data,
+                                ] as [String: Any],
+                            ])
+                        }
+                        messages.append([
+                            "role": "user",
+                            "content": [
+                                [
+                                    "type": "tool_result",
+                                    "tool_use_id": result.toolCallID,
+                                    "content": contentParts,
+                                ] as [String: Any]
+                            ],
+                        ])
+                    }
                 }
 
             case .toolUse:
@@ -385,6 +415,25 @@ enum LLMService {
                         "tool_call_id": result.toolCallID,
                         "content": result.content,
                     ])
+
+                    // OpenAI tool results are text-only; inject images as a follow-up user message
+                    if !result.images.isEmpty {
+                        var parts: [[String: Any]] = [
+                            ["type": "text", "text": "Images from \(result.toolName) tool result:"],
+                        ]
+                        for image in result.images {
+                            parts.append([
+                                "type": "image_url",
+                                "image_url": [
+                                    "url": "data:\(image.mediaType);base64,\(image.base64Data)",
+                                ] as [String: Any],
+                            ])
+                        }
+                        messages.append([
+                            "role": "user",
+                            "content": parts,
+                        ])
+                    }
                 }
 
             case .toolUse:

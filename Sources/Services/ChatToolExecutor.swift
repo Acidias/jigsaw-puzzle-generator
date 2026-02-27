@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Executes chat tool calls against the app's live data.
@@ -9,48 +10,365 @@ enum ChatToolExecutor {
         toolName: String,
         arguments: String,
         modelState: ModelState,
-        datasetState: DatasetState
-    ) -> String {
+        datasetState: DatasetState,
+        appState: AppState
+    ) -> (String, [ToolResultImage]) {
         let args = parseArguments(arguments)
 
         switch toolName {
         case "list_models":
-            return listModels(modelState: modelState)
+            return (listModels(modelState: modelState), [])
         case "get_model_detail":
             guard let modelID = args["model_id"] as? String else {
-                return errorResult("Missing required parameter: model_id")
+                return (errorResult("Missing required parameter: model_id"), [])
             }
-            return getModelDetail(modelID: modelID, modelState: modelState)
+            return (getModelDetail(modelID: modelID, modelState: modelState), [])
         case "list_datasets":
-            return listDatasets(datasetState: datasetState)
+            return (listDatasets(datasetState: datasetState), [])
         case "get_dataset_detail":
             guard let datasetID = args["dataset_id"] as? String else {
-                return errorResult("Missing required parameter: dataset_id")
+                return (errorResult("Missing required parameter: dataset_id"), [])
             }
-            return getDatasetDetail(datasetID: datasetID, datasetState: datasetState)
+            return (getDatasetDetail(datasetID: datasetID, datasetState: datasetState), [])
         case "list_presets":
-            return listPresets(modelState: modelState)
+            return (listPresets(modelState: modelState), [])
         case "get_preset_detail":
             guard let presetID = args["preset_id"] as? String else {
-                return errorResult("Missing required parameter: preset_id")
+                return (errorResult("Missing required parameter: preset_id"), [])
             }
-            return getPresetDetail(presetID: presetID, modelState: modelState)
+            return (getPresetDetail(presetID: presetID, modelState: modelState), [])
         case "get_training_report":
             guard let modelID = args["model_id"] as? String else {
-                return errorResult("Missing required parameter: model_id")
+                return (errorResult("Missing required parameter: model_id"), [])
             }
-            return getTrainingReport(modelID: modelID, modelState: modelState, datasetState: datasetState)
+            return (getTrainingReport(modelID: modelID, modelState: modelState, datasetState: datasetState), [])
         case "compare_models":
             guard let modelIDs = args["model_ids"] as? [String] else {
-                return errorResult("Missing required parameter: model_ids")
+                return (errorResult("Missing required parameter: model_ids"), [])
             }
-            return compareModels(modelIDs: modelIDs, modelState: modelState)
+            return (compareModels(modelIDs: modelIDs, modelState: modelState), [])
+        case "get_sample_pairs":
+            guard let datasetID = args["dataset_id"] as? String else {
+                return (errorResult("Missing required parameter: dataset_id"), [])
+            }
+            let split = args["split"] as? String ?? "test"
+            let category = args["category"] as? String
+            let count = min((args["count"] as? Int) ?? 3, 5)
+            return getSamplePairs(datasetID: datasetID, split: split, category: category, count: count, datasetState: datasetState)
+        case "list_projects":
+            return (listProjects(appState: appState), [])
+        case "get_piece_images":
+            guard let projectID = args["project_id"] as? String else {
+                return (errorResult("Missing required parameter: project_id"), [])
+            }
+            guard let cutID = args["cut_id"] as? String else {
+                return (errorResult("Missing required parameter: cut_id"), [])
+            }
+            let imageName = args["image_name"] as? String
+            let count = min((args["count"] as? Int) ?? 4, 8)
+            return getPieceImages(projectID: projectID, cutID: cutID, imageName: imageName, count: count, appState: appState)
         default:
-            return errorResult("Unknown tool: \(toolName)")
+            return (errorResult("Unknown tool: \(toolName)"), [])
         }
     }
 
-    // MARK: - Tool Implementations
+    // MARK: - Image Helper
+
+    /// Loads an image from a URL, resizes to fit within maxDim x maxDim, and returns a base64-encoded PNG.
+    private static func loadAndEncodeImage(from url: URL, maxDim: Int = 512, label: String) -> ToolResultImage? {
+        guard let image = NSImage(contentsOf: url) else { return nil }
+
+        let originalWidth = image.size.width
+        let originalHeight = image.size.height
+        guard originalWidth > 0, originalHeight > 0 else { return nil }
+
+        // Determine target size maintaining aspect ratio
+        let maxDimCG = CGFloat(maxDim)
+        let targetSize: NSSize
+        if originalWidth <= maxDimCG && originalHeight <= maxDimCG {
+            targetSize = image.size
+        } else {
+            let scale = min(maxDimCG / originalWidth, maxDimCG / originalHeight)
+            targetSize = NSSize(width: round(originalWidth * scale), height: round(originalHeight * scale))
+        }
+
+        // Draw resized image
+        let resized = NSImage(size: targetSize)
+        resized.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: targetSize),
+                   from: NSRect(origin: .zero, size: image.size),
+                   operation: .copy,
+                   fraction: 1.0)
+        resized.unlockFocus()
+
+        // Convert to PNG data
+        guard let tiffData = resized.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+
+        return ToolResultImage(
+            base64Data: pngData.base64EncodedString(),
+            mediaType: "image/png",
+            label: label
+        )
+    }
+
+    // MARK: - New Tool Implementations
+
+    private static func getSamplePairs(
+        datasetID: String,
+        split: String,
+        category: String?,
+        count: Int,
+        datasetState: DatasetState
+    ) -> (String, [ToolResultImage]) {
+        guard let uuid = UUID(uuidString: datasetID),
+              let dataset = datasetState.datasets.first(where: { $0.id == uuid }) else {
+            return (errorResult("Dataset not found with ID: \(datasetID)"), [])
+        }
+
+        let datasetDir = DatasetStore.datasetDirectory(for: uuid)
+        let splitDir = datasetDir.appendingPathComponent(split)
+        let labelsURL = splitDir.appendingPathComponent("labels.csv")
+        let fm = FileManager.default
+
+        guard fm.fileExists(atPath: splitDir.path) else {
+            return (errorResult("Split '\(split)' not found for dataset \(dataset.name)"), [])
+        }
+
+        // Parse labels.csv to get pair metadata
+        guard let labelsData = try? String(contentsOf: labelsURL, encoding: .utf8) else {
+            return (errorResult("Could not read labels.csv from \(split) split"), [])
+        }
+
+        let lines = labelsData.components(separatedBy: "\n").filter { !$0.isEmpty }
+        guard lines.count > 1 else {
+            return (errorResult("labels.csv is empty"), [])
+        }
+
+        // Parse header to find column indices
+        let header = lines[0].components(separatedBy: ",")
+        let colIndex: [String: Int] = Dictionary(uniqueKeysWithValues: header.enumerated().map { ($1, $0) })
+
+        // Parse data rows
+        var rows: [[String]] = []
+        for line in lines.dropFirst() {
+            let cols = line.components(separatedBy: ",")
+            if cols.count >= header.count {
+                // Apply category filter if specified
+                if let cat = category,
+                   let catIdx = colIndex["category"],
+                   cols[catIdx] != cat {
+                    continue
+                }
+                rows.append(cols)
+            }
+        }
+
+        guard !rows.isEmpty else {
+            let filterNote = category != nil ? " with category '\(category!)'" : ""
+            return (errorResult("No pairs found in \(split) split\(filterNote)"), [])
+        }
+
+        // Sample up to count pairs (evenly spaced for variety)
+        let sampleCount = min(count, rows.count)
+        var sampledRows: [[String]] = []
+        if sampleCount >= rows.count {
+            sampledRows = rows
+        } else {
+            let step = Double(rows.count) / Double(sampleCount)
+            for i in 0..<sampleCount {
+                let idx = Int(Double(i) * step)
+                sampledRows.append(rows[idx])
+            }
+        }
+
+        var pairs: [[String: Any]] = []
+        var images: [ToolResultImage] = []
+
+        for row in sampledRows {
+            var pairInfo: [String: Any] = [:]
+
+            // Extract all available metadata columns
+            if let idx = colIndex["left_image"] { pairInfo["left_image"] = row[idx] }
+            if let idx = colIndex["right_image"] { pairInfo["right_image"] = row[idx] }
+            if let idx = colIndex["label"] { pairInfo["label"] = row[idx] }
+            if let idx = colIndex["category"] { pairInfo["category"] = row[idx] }
+            if let idx = colIndex["puzzle_id"] { pairInfo["puzzle_id"] = row[idx] }
+            if let idx = colIndex["left_piece_id"] { pairInfo["left_piece_id"] = row[idx] }
+            if let idx = colIndex["right_piece_id"] { pairInfo["right_piece_id"] = row[idx] }
+            if let idx = colIndex["direction"] { pairInfo["direction"] = row[idx] }
+            if let idx = colIndex["left_edge_index"] { pairInfo["left_edge_index"] = row[idx] }
+
+            // Load pair images
+            if let leftIdx = colIndex["left_image"] {
+                let leftPath = splitDir.appendingPathComponent(row[leftIdx])
+                let catName = (colIndex["category"].flatMap { row[$0] }) ?? "pair"
+                let pairNum = pairs.count + 1
+                if let img = loadAndEncodeImage(from: leftPath, label: "\(catName) pair \(pairNum) - left") {
+                    images.append(img)
+                }
+            }
+            if let rightIdx = colIndex["right_image"] {
+                let rightPath = splitDir.appendingPathComponent(row[rightIdx])
+                let catName = (colIndex["category"].flatMap { row[$0] }) ?? "pair"
+                let pairNum = pairs.count + 1
+                if let img = loadAndEncodeImage(from: rightPath, label: "\(catName) pair \(pairNum) - right") {
+                    images.append(img)
+                }
+            }
+
+            pairs.append(pairInfo)
+        }
+
+        let result: [String: Any] = [
+            "dataset": dataset.name,
+            "split": split,
+            "pairs_returned": pairs.count,
+            "total_pairs_in_split": rows.count,
+            "pairs": pairs,
+        ]
+
+        return (jsonString(result), images)
+    }
+
+    private static func listProjects(appState: AppState) -> [String: Any] {
+        if appState.projects.isEmpty {
+            return ["message": "No projects found. Create one from the sidebar."]
+        }
+
+        let summaries = appState.projects.map { project -> [String: Any] in
+            var info: [String: Any] = [
+                "id": project.id.uuidString,
+                "name": project.name,
+                "image_count": project.images.count,
+                "created_at": ISO8601DateFormatter().string(from: project.createdAt),
+            ]
+
+            if !project.cuts.isEmpty {
+                info["cuts"] = project.cuts.map { cut -> [String: Any] in
+                    var cutInfo: [String: Any] = [
+                        "id": cut.id.uuidString,
+                        "grid": "\(cut.configuration.columns)x\(cut.configuration.rows)",
+                        "total_pieces": cut.totalPieceCount,
+                    ]
+                    if !cut.imageResults.isEmpty {
+                        cutInfo["images"] = cut.imageResults.map { result -> [String: Any] in
+                            [
+                                "image_name": result.imageName,
+                                "piece_count": result.pieces.count,
+                            ]
+                        }
+                    }
+                    return cutInfo
+                }
+            }
+
+            return info
+        }
+
+        return ["projects": summaries]
+    }
+
+    private static func listProjects(appState: AppState) -> String {
+        let dict: [String: Any] = listProjects(appState: appState)
+        return jsonString(dict)
+    }
+
+    private static func getPieceImages(
+        projectID: String,
+        cutID: String,
+        imageName: String?,
+        count: Int,
+        appState: AppState
+    ) -> (String, [ToolResultImage]) {
+        guard let projectUUID = UUID(uuidString: projectID),
+              let project = appState.projects.first(where: { $0.id == projectUUID }) else {
+            return (errorResult("Project not found with ID: \(projectID)"), [])
+        }
+
+        guard let cutUUID = UUID(uuidString: cutID),
+              let cut = project.cuts.first(where: { $0.id == cutUUID }) else {
+            return (errorResult("Cut not found with ID: \(cutID) in project '\(project.name)'"), [])
+        }
+
+        // Find the target image result
+        let imageResult: CutImageResult?
+        if let name = imageName {
+            imageResult = cut.imageResults.first { $0.imageName.localizedCaseInsensitiveContains(name) }
+        } else {
+            imageResult = cut.imageResults.first
+        }
+
+        guard let result = imageResult else {
+            let filterNote = imageName != nil ? " matching '\(imageName!)'" : ""
+            return (errorResult("No image results found\(filterNote) in cut \(cut.displayName)"), [])
+        }
+
+        guard !result.pieces.isEmpty else {
+            return (errorResult("No pieces generated yet for '\(result.imageName)' in cut \(cut.displayName)"), [])
+        }
+
+        let cols = cut.configuration.columns
+
+        // Sample pieces (evenly spaced for variety)
+        let pieceCount = min(count, result.pieces.count)
+        var sampledPieces: [PuzzlePiece] = []
+        if pieceCount >= result.pieces.count {
+            sampledPieces = result.pieces
+        } else {
+            let step = Double(result.pieces.count) / Double(pieceCount)
+            for i in 0..<pieceCount {
+                let idx = Int(Double(i) * step)
+                sampledPieces.append(result.pieces[idx])
+            }
+        }
+
+        var piecesInfo: [[String: Any]] = []
+        var images: [ToolResultImage] = []
+
+        for piece in sampledPieces {
+            let gridRow = piece.pieceIndex / cols
+            let gridCol = piece.pieceIndex % cols
+
+            let info: [String: Any] = [
+                "numeric_id": piece.pieceIndex,
+                "grid_row": gridRow,
+                "grid_col": gridCol,
+                "piece_type": piece.pieceType.rawValue,
+                "bounding_box": [
+                    "x1": piece.x1, "y1": piece.y1,
+                    "x2": piece.x2, "y2": piece.y2,
+                    "width": piece.pieceWidth, "height": piece.pieceHeight,
+                ] as [String: Any],
+                "neighbour_ids": piece.neighbourIDs,
+            ]
+            piecesInfo.append(info)
+
+            // Load piece image
+            if let path = piece.imagePath,
+               let img = loadAndEncodeImage(from: path, label: "Piece \(piece.pieceIndex) (\(piece.pieceType.rawValue))") {
+                images.append(img)
+            }
+        }
+
+        let resultJSON: [String: Any] = [
+            "project": project.name,
+            "cut": cut.displayName,
+            "image_name": result.imageName,
+            "grid": "\(cut.configuration.columns)x\(cut.configuration.rows)",
+            "total_pieces": result.pieces.count,
+            "pieces_returned": piecesInfo.count,
+            "pieces": piecesInfo,
+        ]
+
+        return (jsonString(resultJSON), images)
+    }
+
+    // MARK: - Existing Tool Implementations
 
     private static func listModels(modelState: ModelState) -> String {
         if modelState.models.isEmpty {

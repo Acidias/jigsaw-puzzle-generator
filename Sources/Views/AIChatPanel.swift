@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AIChatPanel: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject var chatState: ChatState
     @ObservedObject var modelState: ModelState
     @ObservedObject var datasetState: DatasetState
@@ -207,7 +208,8 @@ struct AIChatPanel: View {
             await LLMService.streamChat(
                 chatState: chatState,
                 modelState: modelState,
-                datasetState: datasetState
+                datasetState: datasetState,
+                appState: appState
             )
         }
     }

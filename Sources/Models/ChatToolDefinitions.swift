@@ -154,6 +154,31 @@ enum ChatTools {
                 ),
             ]
         ),
+        ChatToolDefinition(
+            name: "get_sample_pairs",
+            description: "Get sample piece pair images from a dataset with full metadata. Returns the actual images (left and right pieces) alongside pair_id, category, label, puzzle_id, left_piece_id, right_piece_id, direction, left_edge_index, and file paths.",
+            parameters: [
+                ChatToolParam(name: "dataset_id", description: "The UUID of the dataset to sample from"),
+                ChatToolParam(name: "split", description: "Which split to sample from: train, test, or valid (default: test)", isRequired: false),
+                ChatToolParam(name: "category", description: "Optional category filter: correct, wrongShapeMatch, wrongOrientation, wrongImageMatch, or wrongNothing", isRequired: false),
+                ChatToolParam(name: "count", type: "integer", description: "Number of pairs to return (default: 3, max: 5)", isRequired: false),
+            ]
+        ),
+        ChatToolDefinition(
+            name: "list_projects",
+            description: "List all puzzle projects with their images and cuts. Returns project id, name, image count, cut summaries (id, grid size, piece count per image), and created date.",
+            parameters: []
+        ),
+        ChatToolDefinition(
+            name: "get_piece_images",
+            description: "Get piece images from a project cut with full metadata. Returns the actual piece images alongside piece numeric ID, grid row/col (grid indices), piece type (corner/edge/interior), bounding box, and neighbour IDs.",
+            parameters: [
+                ChatToolParam(name: "project_id", description: "The UUID of the project"),
+                ChatToolParam(name: "cut_id", description: "The UUID of the cut within the project"),
+                ChatToolParam(name: "image_name", description: "Optional filter by source image name (returns pieces from the first matching image result)", isRequired: false),
+                ChatToolParam(name: "count", type: "integer", description: "Number of pieces to return (default: 4, max: 8)", isRequired: false),
+            ]
+        ),
     ]
 
     static func claudeTools() -> [[String: Any]] {
