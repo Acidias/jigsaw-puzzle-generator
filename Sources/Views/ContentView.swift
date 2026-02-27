@@ -9,6 +9,7 @@ struct ContentView: View {
     @StateObject private var datasetState = DatasetState()
     @StateObject private var modelState = ModelState()
     @StateObject private var chatState = ChatState()
+    @StateObject private var autoMLState = AutoMLState()
     @State private var sidebarSelection: SidebarItem? = nil
     @State private var isDragTargeted = false
     @State private var errorMessage: String?
@@ -23,7 +24,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(datasetState: datasetState, modelState: modelState, selection: $sidebarSelection)
+            SidebarView(datasetState: datasetState, modelState: modelState, autoMLState: autoMLState, selection: $sidebarSelection)
         } detail: {
             VStack(spacing: 0) {
                 Group {
@@ -33,7 +34,7 @@ struct ContentView: View {
                     case .batchOpenverse:
                         OpenversePanel(state: openverseState)
                     case .aiChat:
-                        AIChatPanel(chatState: chatState, modelState: modelState, datasetState: datasetState)
+                        AIChatPanel(chatState: chatState, modelState: modelState, datasetState: datasetState, autoMLState: autoMLState)
                     case .datasetGeneration:
                         DatasetGenerationPanel(datasetState: datasetState)
                     case .dataset(let id):
@@ -46,8 +47,14 @@ struct ContentView: View {
                         if let preset = modelState.presets.first(where: { $0.id == id }) {
                             PresetDetailView(preset: preset, modelState: modelState)
                         }
+                    case .autoML:
+                        AutoMLPanel(autoMLState: autoMLState, modelState: modelState, datasetState: datasetState, selection: $sidebarSelection)
+                    case .study(let id):
+                        if let study = autoMLState.studies.first(where: { $0.id == id }) {
+                            AutoMLStudyDetailView(study: study, autoMLState: autoMLState, modelState: modelState, datasetState: datasetState, selection: $sidebarSelection)
+                        }
                     case .modelTraining:
-                        ModelTrainingPanel(modelState: modelState, datasetState: datasetState, selection: $sidebarSelection)
+                        ModelTrainingPanel(modelState: modelState, datasetState: datasetState, autoMLState: autoMLState, selection: $sidebarSelection)
                     case .model(let id):
                         if let model = modelState.models.first(where: { $0.id == id }) {
                             ModelDetailView(model: model, modelState: modelState, datasetState: datasetState)
@@ -184,6 +191,7 @@ struct ContentView: View {
             datasetState.loadDatasets()
             modelState.loadPresets()
             modelState.loadModels()
+            autoMLState.loadStudies()
             chatState.loadSession()
         }
     }

@@ -5,6 +5,7 @@ struct AIChatPanel: View {
     @ObservedObject var chatState: ChatState
     @ObservedObject var modelState: ModelState
     @ObservedObject var datasetState: DatasetState
+    @ObservedObject var autoMLState: AutoMLState
 
     @State private var chatTask: Task<Void, Never>?
     @State private var showSettings = false
@@ -224,7 +225,8 @@ struct AIChatPanel: View {
                 chatState: chatState,
                 modelState: modelState,
                 datasetState: datasetState,
-                appState: appState
+                appState: appState,
+                autoMLState: autoMLState
             )
         }
     }

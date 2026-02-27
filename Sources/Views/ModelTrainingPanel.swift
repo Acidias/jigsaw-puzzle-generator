@@ -4,6 +4,7 @@ import SwiftUI
 struct ModelTrainingPanel: View {
     @ObservedObject var modelState: ModelState
     @ObservedObject var datasetState: DatasetState
+    @ObservedObject var autoMLState: AutoMLState
     @Binding var selection: SidebarItem?
 
     @State private var selectedPresetID: UUID?
@@ -80,7 +81,7 @@ struct ModelTrainingPanel: View {
     }
 
     private var canTrain: Bool {
-        guard canCreate && !modelState.isTraining else { return false }
+        guard canCreate && !modelState.isTraining && !autoMLState.isRunning else { return false }
         if modelState.trainingTarget == .cloud {
             return modelState.cloudConfig.isValid
         }

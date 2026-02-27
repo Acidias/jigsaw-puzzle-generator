@@ -59,7 +59,8 @@ enum LLMService {
         chatState: ChatState,
         modelState: ModelState,
         datasetState: DatasetState,
-        appState: AppState
+        appState: AppState,
+        autoMLState: AutoMLState? = nil
     ) async {
         await chatState.setStreaming(true)
         defer { Task { @MainActor in chatState.isStreaming = false } }
@@ -97,7 +98,8 @@ enum LLMService {
                         arguments: toolCall.arguments,
                         modelState: modelState,
                         datasetState: datasetState,
-                        appState: appState
+                        appState: appState,
+                        autoMLState: autoMLState
                     )
 
                     var toolResult = ChatToolResult(
