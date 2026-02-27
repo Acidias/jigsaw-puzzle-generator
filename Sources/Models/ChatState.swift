@@ -40,6 +40,7 @@ enum ChatCredentialStore {
     private static let openAIKeyKey = "ai_chat_openai_api_key"
     private static let providerKey = "ai_chat_provider"
     private static let modelIDKey = "ai_chat_model_id"
+    private static let showRawConversationKey = "ai_chat_show_raw_conversation"
 
     static var claudeAPIKey: String {
         get { UserDefaults.standard.string(forKey: claudeKeyKey) ?? "" }
@@ -63,6 +64,11 @@ enum ChatCredentialStore {
     static var savedModelID: String? {
         get { UserDefaults.standard.string(forKey: modelIDKey) }
         set { UserDefaults.standard.set(newValue, forKey: modelIDKey) }
+    }
+
+    static var showRawConversation: Bool {
+        get { UserDefaults.standard.bool(forKey: showRawConversationKey) }
+        set { UserDefaults.standard.set(newValue, forKey: showRawConversationKey) }
     }
 
     static func apiKey(for provider: LLMProvider) -> String {
@@ -175,6 +181,7 @@ class ChatState: ObservableObject {
     @Published var provider: LLMProvider
     @Published var selectedModelID: String
     @Published var error: String?
+    @Published var showRawConversation: Bool
 
     var selectedModel: LLMModel {
         LLMModels.all.first { $0.id == selectedModelID }
@@ -194,6 +201,7 @@ class ChatState: ObservableObject {
         } else {
             self.selectedModelID = LLMModels.defaultModel(for: savedProvider).id
         }
+        self.showRawConversation = ChatCredentialStore.showRawConversation
     }
 
     func setProvider(_ newProvider: LLMProvider) {
@@ -208,6 +216,11 @@ class ChatState: ObservableObject {
     func setModel(_ modelID: String) {
         selectedModelID = modelID
         ChatCredentialStore.savedModelID = modelID
+    }
+
+    func setShowRawConversation(_ value: Bool) {
+        showRawConversation = value
+        ChatCredentialStore.showRawConversation = value
     }
 
     func addUserMessage(_ text: String) {

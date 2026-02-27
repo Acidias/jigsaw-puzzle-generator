@@ -10,6 +10,24 @@ struct AIChatPanel: View {
     @State private var showSettings = false
 
     var body: some View {
+        Group {
+            if chatState.showRawConversation {
+                HSplitView {
+                    chatContent
+                        .frame(minWidth: 400)
+                    RawConversationPanel(chatState: chatState)
+                        .frame(minWidth: 300, idealWidth: 400)
+                }
+            } else {
+                chatContent
+            }
+        }
+        .onDisappear {
+            chatTask?.cancel()
+        }
+    }
+
+    private var chatContent: some View {
         VStack(spacing: 0) {
             // Header
             headerBar
@@ -27,9 +45,6 @@ struct AIChatPanel: View {
 
             // Input
             inputBar
-        }
-        .onDisappear {
-            chatTask?.cancel()
         }
     }
 

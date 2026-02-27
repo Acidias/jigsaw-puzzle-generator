@@ -69,6 +69,13 @@ struct ChatSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Divider()
+
+            Toggle("Show raw conversation", isOn: Binding(
+                get: { chatState.showRawConversation },
+                set: { chatState.setShowRawConversation($0) }
+            ))
         }
         .padding()
         .frame(width: 320)

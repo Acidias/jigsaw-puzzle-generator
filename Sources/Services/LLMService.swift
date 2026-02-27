@@ -234,7 +234,7 @@ enum LLMService {
     }
 
     @MainActor
-    private static func buildClaudeMessages(chatState: ChatState) -> [[String: Any]] {
+    static func buildClaudeMessages(chatState: ChatState) -> [[String: Any]] {
         var messages: [[String: Any]] = []
 
         for msg in chatState.messages {
@@ -402,7 +402,7 @@ enum LLMService {
     }
 
     @MainActor
-    private static func buildOpenAIMessages(chatState: ChatState) -> [[String: Any]] {
+    static func buildOpenAIMessages(chatState: ChatState) -> [[String: Any]] {
         var messages: [[String: Any]] = [
             ["role": "system", "content": Self.systemPrompt],
         ]
