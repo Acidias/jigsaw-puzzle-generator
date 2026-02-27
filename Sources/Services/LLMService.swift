@@ -66,6 +66,8 @@ enum LLMService {
 
         // Tool call loop - keeps going until the LLM responds with pure text (no tool calls)
         var maxIterations = 10
+        var rateLimitRetries = 0
+        let maxRateLimitRetries = 3
         while maxIterations > 0 {
             maxIterations -= 1
 
@@ -111,6 +113,18 @@ enum LLMService {
                 // Loop back to send tool results to the LLM
             } catch is CancellationError {
                 await chatState.finaliseMessage(id: messageID)
+                return
+            } catch let error as LLMError {
+                if case .apiError(let code, _) = error, code == 429, rateLimitRetries < maxRateLimitRetries {
+                    // Rate limited - wait and retry (don't consume an iteration)
+                    rateLimitRetries += 1
+                    await chatState.finaliseMessage(id: messageID)
+                    maxIterations += 1
+                    try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                    continue
+                }
+                await chatState.finaliseMessage(id: messageID)
+                await MainActor.run { chatState.error = error.localizedDescription }
                 return
             } catch {
                 await chatState.finaliseMessage(id: messageID)
