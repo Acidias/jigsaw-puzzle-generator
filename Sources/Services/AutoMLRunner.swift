@@ -389,21 +389,40 @@ enum AutoMLRunner {
         // Install deps + run training
         let totalTrials = study.configuration.numTrials
         await MainActor.run {
-            state.runningStatus = .running(trial: 0, totalTrials: totalTrials)
-            state.appendLog("[automl] Starting cloud hyperparameter search...")
+            state.runningStatus = .installingDependencies
+            state.appendLog("Installing dependencies and starting training...")
         }
+
+        // Smart pip install: check for existing CUDA PyTorch, install Optuna + deps
+        let pipFlags = "--root-user-action=ignore --break-system-packages"
+        let pipCommand = """
+            if python3 -c "import torch; assert torch.cuda.is_available()" 2>/dev/null && python3 -c "import optuna" 2>/dev/null; then \
+                echo "CUDA PyTorch and Optuna already available"; \
+            elif python3 -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then \
+                echo "CUDA PyTorch available, installing Optuna..."; \
+                pip3 install \(pipFlags) optuna>=3.0 pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
+            else \
+                echo "Installing CUDA PyTorch + Optuna..."; \
+                pip3 install \(pipFlags) torch torchvision --index-url https://download.pytorch.org/whl/cu124; \
+                pip3 install \(pipFlags) optuna>=3.0 pandas>=1.5 Pillow>=9.0 numpy>=1.24 scikit-learn>=1.2; \
+            fi
+            """
+        let remoteCommand = "cd \(remoteDir) && \(pipCommand) && echo 'Starting AutoML search...' && PYTHONUNBUFFERED=1 python3 automl_train.py"
 
         let sshTrainCode: Int32
         do {
-            let pipCmd = "cd \(remoteDir) && python3 -m venv .venv 2>/dev/null; .venv/bin/python3 -m pip install -q -r requirements.txt && PYTHONUNBUFFERED=1 .venv/bin/python3 automl_train.py"
             sshTrainCode = try await runProcess(
                 executable: "/usr/bin/ssh",
-                arguments: sshFlags + [remoteHost, pipCmd],
+                arguments: sshFlags + [remoteHost, remoteCommand],
                 workingDirectory: localWorkDir,
                 environment: ProcessInfo.processInfo.environment,
                 onStdoutLine: { line in
                     Task { @MainActor in
                         state.appendLog(line)
+                        // Detect transition from pip install to training
+                        if line.contains("Starting AutoML search") || line.hasPrefix("AUTOML_START") {
+                            state.runningStatus = .running(trial: 0, totalTrials: totalTrials)
+                        }
                         parseAutoMLLine(line, state: state, totalTrials: totalTrials)
                     }
                 },
