@@ -125,11 +125,12 @@ struct RankingMetrics: Codable, Equatable {
     }
 }
 
-/// 4-class classification metrics (correct/wrongShape/wrongImage/wrongNothing).
+/// Multi-class classification metrics (correct/wrongShape/wrongOrientation/wrongImage/wrongNothing).
+/// Field name `confusionMatrix4x4` kept for backwards compatibility - actual size is NxN.
 struct FourClassMetrics: Codable, Equatable {
     let accuracy: Double
     let perClassAccuracy: [String: Double]
-    let confusionMatrix4x4: [[Int]]     // 4x4 matrix, rows=true, cols=predicted
+    let confusionMatrix4x4: [[Int]]     // NxN matrix, rows=true, cols=predicted
 }
 
 /// Information about the training run for performance comparison.

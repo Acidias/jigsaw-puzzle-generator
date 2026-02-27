@@ -26,8 +26,8 @@ enum LLMService {
     Allows fair cross-model comparison.
     - **F1 score**: harmonic mean of precision and recall.
     - **Confusion matrix**: TP/FP/FN/TN breakdown.
-    - **4-class metrics**: when useFourClass is enabled, the model classifies into 4 categories \
-    instead of binary match/non-match.
+    - **Multi-class metrics**: when useFourClass is enabled, the model classifies into 5 categories \
+    (correct, wrongShapeMatch, wrongOrientation, wrongImageMatch, wrongNothing) instead of binary match/non-match.
 
     Architecture parameters:
     - **Conv blocks**: each has filters, kernel size, batch norm, max pool. More blocks = more capacity.

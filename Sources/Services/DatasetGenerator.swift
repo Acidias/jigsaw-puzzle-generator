@@ -71,6 +71,7 @@ enum DatasetGenerator {
         let pools: [(DatasetCategory, Int, Int)] = [
             (.correct, config.correctCount, state.correctPool(imageCount: imageCount)),
             (.wrongShapeMatch, config.wrongShapeMatchCount, state.shapeMatchPool(imageCount: imageCount)),
+            (.wrongOrientation, config.wrongOrientationCount, state.orientationPool(imageCount: imageCount)),
             (.wrongImageMatch, config.wrongImageMatchCount, state.imageMatchPool(imageCount: imageCount)),
             (.wrongNothing, config.wrongNothingCount, state.nothingPool(imageCount: imageCount)),
         ]
@@ -483,6 +484,17 @@ enum DatasetGenerator {
             return DatasetPair(left: left, right: right, category: .correct, pairID: pairID,
                                direction: direction, leftEdgeIndex: leftEdgeIndex)
 
+        case .wrongOrientation:
+            // Same image, same cut, adjacent pair - but swap left and right
+            guard let imageID = imageIDs.randomElement(),
+                  let cutIndex = cutIndices.randomElement(),
+                  let pieces = pieceLookup[imageID]?[cutIndex],
+                  let left = piece(atRow: pos.r1, col: pos.c1, in: pieces),
+                  let right = piece(atRow: pos.r2, col: pos.c2, in: pieces) else { return nil }
+            // Swap: right becomes left, left becomes right
+            return DatasetPair(left: right, right: left, category: .wrongOrientation, pairID: pairID,
+                               direction: direction, leftEdgeIndex: leftEdgeIndex)
+
         case .wrongShapeMatch:
             // Same cut (shared GridEdges), same pair position, different images
             guard imageIDs.count >= 2,
@@ -585,6 +597,7 @@ enum DatasetGenerator {
             "requested_counts": [
                 "correct": config.correctCount,
                 "wrong_shape_match": config.wrongShapeMatchCount,
+                "wrong_orientation": config.wrongOrientationCount,
                 "wrong_image_match": config.wrongImageMatchCount,
                 "wrong_nothing": config.wrongNothingCount,
             ],

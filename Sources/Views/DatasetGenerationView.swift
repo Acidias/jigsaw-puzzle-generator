@@ -126,6 +126,11 @@ struct DatasetGenerationPanel: View {
                         requested: datasetState.configuration.wrongShapeMatchCount
                     )
                     capacityRow(
+                        "Orientation",
+                        pool: datasetState.orientationPool(imageCount: imageCount),
+                        requested: datasetState.configuration.wrongOrientationCount
+                    )
+                    capacityRow(
                         "Image match",
                         pool: datasetState.imageMatchPool(imageCount: imageCount),
                         requested: datasetState.configuration.wrongImageMatchCount
@@ -271,6 +276,7 @@ struct DatasetGenerationPanel: View {
             VStack(spacing: 8) {
                 categoryCountRow("Correct:", value: $datasetState.configuration.correctCount)
                 categoryCountRow("Shape match (wrong):", value: $datasetState.configuration.wrongShapeMatchCount)
+                categoryCountRow("Orientation (wrong):", value: $datasetState.configuration.wrongOrientationCount)
                 categoryCountRow("Image match (wrong):", value: $datasetState.configuration.wrongImageMatchCount)
                 categoryCountRow("Nothing (wrong):", value: $datasetState.configuration.wrongNothingCount)
 
@@ -586,6 +592,7 @@ struct DatasetDetailView: View {
                         Divider()
                         configRow("Correct (requested)", value: "\(dataset.configuration.correctCount)")
                         configRow("Shape match (requested)", value: "\(dataset.configuration.wrongShapeMatchCount)")
+                        configRow("Orientation (requested)", value: "\(dataset.configuration.wrongOrientationCount)")
                         configRow("Image match (requested)", value: "\(dataset.configuration.wrongImageMatchCount)")
                         configRow("Nothing (requested)", value: "\(dataset.configuration.wrongNothingCount)")
                         Divider()
@@ -699,6 +706,7 @@ struct DatasetDetailView: View {
         switch category {
         case .correct: return .green
         case .wrongShapeMatch: return .orange
+        case .wrongOrientation: return .purple
         case .wrongImageMatch: return .blue
         case .wrongNothing: return .red
         }
@@ -1049,6 +1057,7 @@ private struct SamplePairCard: View {
         let colour: Color = switch category {
         case .correct: .green
         case .wrongShapeMatch: .orange
+        case .wrongOrientation: .purple
         case .wrongImageMatch: .blue
         case .wrongNothing: .red
         }

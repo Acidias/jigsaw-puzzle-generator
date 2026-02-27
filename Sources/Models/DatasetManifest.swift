@@ -18,6 +18,7 @@ struct DatasetManifest: Codable {
     let validRatio: Double
     let correctCount: Int
     let wrongShapeMatchCount: Int
+    let wrongOrientationCount: Int
     let wrongImageMatchCount: Int
     let wrongNothingCount: Int
     // Counts
@@ -42,6 +43,7 @@ struct DatasetManifest: Codable {
         validRatio = try container.decode(Double.self, forKey: .validRatio)
         correctCount = try container.decode(Int.self, forKey: .correctCount)
         wrongShapeMatchCount = try container.decode(Int.self, forKey: .wrongShapeMatchCount)
+        wrongOrientationCount = try container.decodeIfPresent(Int.self, forKey: .wrongOrientationCount) ?? 0
         wrongImageMatchCount = try container.decode(Int.self, forKey: .wrongImageMatchCount)
         wrongNothingCount = try container.decode(Int.self, forKey: .wrongNothingCount)
         splitCounts = try container.decode([String: [String: Int]].self, forKey: .splitCounts)
@@ -66,6 +68,7 @@ struct DatasetManifest: Codable {
         self.validRatio = dataset.configuration.validRatio
         self.correctCount = dataset.configuration.correctCount
         self.wrongShapeMatchCount = dataset.configuration.wrongShapeMatchCount
+        self.wrongOrientationCount = dataset.configuration.wrongOrientationCount
         self.wrongImageMatchCount = dataset.configuration.wrongImageMatchCount
         self.wrongNothingCount = dataset.configuration.wrongNothingCount
         self.totalPairs = dataset.totalPairs
@@ -95,6 +98,7 @@ struct DatasetManifest: Codable {
         config.validRatio = validRatio
         config.correctCount = correctCount
         config.wrongShapeMatchCount = wrongShapeMatchCount
+        config.wrongOrientationCount = wrongOrientationCount
         config.wrongImageMatchCount = wrongImageMatchCount
         config.wrongNothingCount = wrongNothingCount
 

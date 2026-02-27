@@ -189,9 +189,9 @@ struct ArchitectureEditorView: View {
 
                 Divider()
 
-                Toggle("4-Class Output (Softmax)", isOn: $architecture.useFourClass)
+                Toggle("Multi-Class Output (Softmax)", isOn: $architecture.useFourClass)
                     .font(.callout)
-                    .help("Classify into correct/wrongShape/wrongImage/wrongNothing instead of binary match")
+                    .help("Classify into correct/wrongShape/wrongOrientation/wrongImage/wrongNothing instead of binary match")
 
                 Toggle("Seam-Only Input", isOn: $architecture.useSeamOnly)
                     .font(.callout)
