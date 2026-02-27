@@ -193,8 +193,8 @@ enum ChatToolExecutor {
             var pairInfo: [String: Any] = [:]
 
             // Extract all available metadata columns
-            if let idx = colIndex["left_image"] { pairInfo["left_image"] = row[idx] }
-            if let idx = colIndex["right_image"] { pairInfo["right_image"] = row[idx] }
+            if let idx = colIndex["left_file"] { pairInfo["left_file"] = row[idx] }
+            if let idx = colIndex["right_file"] { pairInfo["right_file"] = row[idx] }
             if let idx = colIndex["label"] { pairInfo["label"] = row[idx] }
             if let idx = colIndex["category"] { pairInfo["category"] = row[idx] }
             if let idx = colIndex["puzzle_id"] { pairInfo["puzzle_id"] = row[idx] }
@@ -204,7 +204,7 @@ enum ChatToolExecutor {
             if let idx = colIndex["left_edge_index"] { pairInfo["left_edge_index"] = row[idx] }
 
             // Load pair images
-            if let leftIdx = colIndex["left_image"] {
+            if let leftIdx = colIndex["left_file"] {
                 let leftPath = splitDir.appendingPathComponent(row[leftIdx])
                 let catName = (colIndex["category"].flatMap { row[$0] }) ?? "pair"
                 let pairNum = pairs.count + 1
@@ -212,7 +212,7 @@ enum ChatToolExecutor {
                     images.append(img)
                 }
             }
-            if let rightIdx = colIndex["right_image"] {
+            if let rightIdx = colIndex["right_file"] {
                 let rightPath = splitDir.appendingPathComponent(row[rightIdx])
                 let catName = (colIndex["category"].flatMap { row[$0] }) ?? "pair"
                 let pairNum = pairs.count + 1
