@@ -15,11 +15,13 @@ struct LLMModel: Identifiable, Hashable {
 
 enum LLMModels {
     static let all: [LLMModel] = [
-        LLMModel(id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: .claude),
-        LLMModel(id: "claude-haiku-4-20250506", name: "Claude Haiku 4", provider: .claude),
+        LLMModel(id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: .claude),
+        LLMModel(id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", provider: .claude),
+        LLMModel(id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: .claude),
+        LLMModel(id: "gpt-5.2", name: "GPT-5.2", provider: .openAI),
+        LLMModel(id: "gpt-5.2-chat-latest", name: "GPT-5.2 Instant", provider: .openAI),
         LLMModel(id: "gpt-4o", name: "GPT-4o", provider: .openAI),
         LLMModel(id: "gpt-4o-mini", name: "GPT-4o Mini", provider: .openAI),
-        LLMModel(id: "o3-mini", name: "o3-mini", provider: .openAI),
     ]
 
     static func models(for provider: LLMProvider) -> [LLMModel] {
