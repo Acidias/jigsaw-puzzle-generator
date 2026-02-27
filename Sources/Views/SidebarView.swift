@@ -3,6 +3,7 @@ import SwiftUI
 enum SidebarItem: Hashable {
     case batchLocal
     case batchOpenverse
+    case aiChat
     case datasetGeneration
     case dataset(UUID)
     case architecturePresets
@@ -31,6 +32,11 @@ struct SidebarView: View {
             }
 
             Section("AI Tools") {
+                Label("AI Chat", systemImage: "bubble.left.and.bubble.right")
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .tag(SidebarItem.aiChat)
+
                 Label("Dataset Generation", systemImage: "brain")
                     .font(.body)
                     .fontWeight(.semibold)
@@ -155,7 +161,7 @@ struct SidebarView: View {
 
     private func handleSelection(_ item: SidebarItem?) {
         switch item {
-        case .batchLocal, .batchOpenverse, .datasetGeneration, .dataset, .architecturePresets, .preset, .modelTraining, .model:
+        case .batchLocal, .batchOpenverse, .aiChat, .datasetGeneration, .dataset, .architecturePresets, .preset, .modelTraining, .model:
             appState.selectedProjectID = nil
             appState.selectedCutID = nil
             appState.selectedCutImageID = nil

@@ -6,6 +6,8 @@ enum DatasetCategory: String, CaseIterable {
     case correct = "correct"
     /// Wrong: shapes interlock (same GridEdges) but image content differs.
     case wrongShapeMatch = "wrong_shape_match"
+    /// Wrong: correct neighbours but presented in swapped order (right on left, left on right).
+    case wrongOrientation = "wrong_orientation"
     /// Wrong: same image content near seam but shapes don't interlock (different GridEdges).
     case wrongImageMatch = "wrong_image_match"
     /// Wrong: different images and different cuts. Neither shape nor content matches.
@@ -14,7 +16,7 @@ enum DatasetCategory: String, CaseIterable {
     var label: Int {
         switch self {
         case .correct: return 1
-        case .wrongShapeMatch, .wrongImageMatch, .wrongNothing: return 0
+        case .wrongShapeMatch, .wrongOrientation, .wrongImageMatch, .wrongNothing: return 0
         }
     }
 
@@ -22,6 +24,7 @@ enum DatasetCategory: String, CaseIterable {
         switch self {
         case .correct: return "Correct"
         case .wrongShapeMatch: return "Shape match"
+        case .wrongOrientation: return "Wrong orientation"
         case .wrongImageMatch: return "Image match"
         case .wrongNothing: return "Nothing"
         }
@@ -65,6 +68,7 @@ struct DatasetConfiguration {
     var cutsPerImage: Int = 10
     var correctCount: Int = 500
     var wrongShapeMatchCount: Int = 500
+    var wrongOrientationCount: Int = 500
     var wrongImageMatchCount: Int = 500
     var wrongNothingCount: Int = 500
     var trainRatio: Double = 0.70
@@ -72,13 +76,14 @@ struct DatasetConfiguration {
     var validRatio: Double = 0.15
     /// Total pairs across all categories.
     var totalPairs: Int {
-        correctCount + wrongShapeMatchCount + wrongImageMatchCount + wrongNothingCount
+        correctCount + wrongShapeMatchCount + wrongOrientationCount + wrongImageMatchCount + wrongNothingCount
     }
 
     func count(for category: DatasetCategory) -> Int {
         switch category {
         case .correct: return correctCount
         case .wrongShapeMatch: return wrongShapeMatchCount
+        case .wrongOrientation: return wrongOrientationCount
         case .wrongImageMatch: return wrongImageMatchCount
         case .wrongNothing: return wrongNothingCount
         }
@@ -154,6 +159,11 @@ class DatasetState: ObservableObject {
     }
 
     func correctPool(imageCount: Int) -> Int {
+        imageCount * configuration.cutsPerImage * pairPositions
+    }
+
+    func orientationPool(imageCount: Int) -> Int {
+        // Every correct pair can be swapped, so pool equals correctPool
         imageCount * configuration.cutsPerImage * pairPositions
     }
 

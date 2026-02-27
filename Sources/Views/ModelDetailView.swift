@@ -832,19 +832,22 @@ struct ModelDetailView: View {
     // MARK: - 4-Class Metrics
 
     private func fourClassMetricsView(_ metrics: FourClassMetrics) -> some View {
-        GroupBox("4-Class Classification") {
+        let numClasses = metrics.confusionMatrix4x4.count
+        return GroupBox("\(numClasses)-Class Classification") {
             VStack(spacing: 12) {
                 // Overall accuracy
                 HStack(spacing: 16) {
                     statBadge(
                         value: String(format: "%.1f%%", metrics.accuracy * 100),
-                        label: "4-Class Accuracy",
+                        label: "\(numClasses)-Class Accuracy",
                         colour: .indigo
                     )
                 }
 
                 // Per-class accuracy
-                let classOrder = ["correct", "wrong_shape_match", "wrong_image_match", "wrong_nothing"]
+                let classOrder = numClasses >= 5
+                    ? ["correct", "wrong_shape_match", "wrong_orientation", "wrong_image_match", "wrong_nothing"]
+                    : ["correct", "wrong_shape_match", "wrong_image_match", "wrong_nothing"]
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         Text("Class")
@@ -876,10 +879,12 @@ struct ModelDetailView: View {
                     }
                 }
 
-                // 4x4 confusion matrix
-                let labels = ["Corr", "Shape", "Image", "None"]
+                // NxN confusion matrix
+                let labels = numClasses >= 5
+                    ? ["Corr", "Shape", "Orient", "Image", "None"]
+                    : ["Corr", "Shape", "Image", "None"]
                 VStack(spacing: 0) {
-                    Text("Confusion Matrix (4x4)")
+                    Text("Confusion Matrix (\(numClasses)x\(numClasses))")
                         .font(.caption)
                         .fontWeight(.semibold)
                         .padding(.bottom, 4)
@@ -897,13 +902,13 @@ struct ModelDetailView: View {
                     }
 
                     // Rows
-                    ForEach(0..<4, id: \.self) { row in
+                    ForEach(0..<numClasses, id: \.self) { row in
                         HStack(spacing: 0) {
-                            Text(labels[row])
+                            Text(row < labels.count ? labels[row] : "\(row)")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
                                 .frame(width: 55, alignment: .trailing)
-                            ForEach(0..<4, id: \.self) { col in
+                            ForEach(0..<numClasses, id: \.self) { col in
                                 let value = row < metrics.confusionMatrix4x4.count && col < metrics.confusionMatrix4x4[row].count
                                     ? metrics.confusionMatrix4x4[row][col] : 0
                                 let isDiagonal = row == col
@@ -1015,7 +1020,7 @@ struct ModelDetailView: View {
     // MARK: - Per-Category Results
 
     private func perCategoryView(_ results: [String: CategoryResult]) -> some View {
-        let order = ["correct", "wrong_shape_match", "wrong_image_match", "wrong_nothing"]
+        let order = ["correct", "wrong_shape_match", "wrong_orientation", "wrong_image_match", "wrong_nothing"]
         let sorted = order.compactMap { key in
             results[key].map { (key, $0) }
         } + results.filter { !order.contains($0.key) }.sorted(by: { $0.key < $1.key }).map { ($0.key, $0.value) }
@@ -1084,6 +1089,7 @@ struct ModelDetailView: View {
         switch raw {
         case "correct": return "Correct"
         case "wrong_shape_match": return "Wrong shape match"
+        case "wrong_orientation": return "Wrong orientation"
         case "wrong_image_match": return "Wrong image match"
         case "wrong_nothing": return "Wrong nothing"
         default: return raw.replacingOccurrences(of: "_", with: " ").capitalized

@@ -54,8 +54,8 @@ enum TrainingScriptGenerator {
         USE_FOUR_CLASS = \(arch.useFourClass ? "True" : "False")
         USE_SEAM_ONLY = \(arch.useSeamOnly ? "True" : "False")
         SEAM_WIDTH = \(arch.seamWidth)
-        NUM_CLASSES = 4 if USE_FOUR_CLASS else 1
-        CATEGORY_TO_IDX = {"correct": 0, "wrong_shape_match": 1, "wrong_image_match": 2, "wrong_nothing": 3}
+        NUM_CLASSES = 5 if USE_FOUR_CLASS else 1
+        CATEGORY_TO_IDX = {"correct": 0, "wrong_shape_match": 1, "wrong_orientation": 2, "wrong_image_match": 3, "wrong_nothing": 4}
         NUM_WORKERS = min(os.cpu_count() or 1, \(arch.devicePreference == .cuda ? 8 : 4))
 
         \(generateDeviceSelectionPython(arch.devicePreference))
@@ -158,7 +158,8 @@ enum TrainingScriptGenerator {
                     right_img = self.transform(right_img)
 
                 if USE_FOUR_CLASS:
-                    return left_img, right_img, torch.tensor(CATEGORY_TO_IDX[category], dtype=torch.long)
+                    cat_idx = CATEGORY_TO_IDX.get(category, 0)
+                    return left_img, right_img, torch.tensor(cat_idx, dtype=torch.long)
                 return left_img, right_img, torch.tensor(label, dtype=torch.float32)
 
 
@@ -329,14 +330,16 @@ enum TrainingScriptGenerator {
 
             four_class_metrics = None
             if USE_FOUR_CLASS:
-                # 4x4 confusion matrix
-                cm_4x4 = [[0]*4 for _ in range(4)]
+                # NxN confusion matrix (5x5 with wrongOrientation, 4x4 for old datasets)
+                n_cls = NUM_CLASSES
+                cm_nxn = [[0]*n_cls for _ in range(n_cls)]
                 for true_cls, pred_cls in zip(all_labels, all_preds):
-                    cm_4x4[int(true_cls)][int(pred_cls)] += 1
+                    if int(true_cls) < n_cls and int(pred_cls) < n_cls:
+                        cm_nxn[int(true_cls)][int(pred_cls)] += 1
                 # Per-class accuracy
                 idx_to_cat = {v: k for k, v in CATEGORY_TO_IDX.items()}
                 per_class_acc = {}
-                for cls_idx in range(4):
+                for cls_idx in range(n_cls):
                     cls_mask = all_labels == cls_idx
                     cls_total = int(cls_mask.sum())
                     cls_correct = int(((all_preds == cls_idx) & cls_mask).sum())
@@ -345,7 +348,7 @@ enum TrainingScriptGenerator {
                 four_class_metrics = {
                     "accuracy": round(float((all_preds == all_labels).mean()), 6),
                     "perClassAccuracy": per_class_acc,
-                    "confusionMatrix4x4": cm_4x4,
+                    "confusionMatrix4x4": cm_nxn,
                 }
 
             # Binary confusion matrix (for 4-class: class 0 = positive, rest = negative)
@@ -760,8 +763,8 @@ enum TrainingScriptGenerator {
             # Model
             model = SiameseNetwork().to(DEVICE)
             if USE_FOUR_CLASS:
-                # Weight class 0 (correct) higher to compensate for 1:3 imbalance
-                class_weights = torch.tensor([3.0, 1.0, 1.0, 1.0], device=DEVICE)
+                # Weight class 0 (correct) higher to compensate for 1:N imbalance
+                class_weights = torch.tensor([float(NUM_CLASSES - 1)] + [1.0] * (NUM_CLASSES - 1), device=DEVICE)
                 criterion = nn.CrossEntropyLoss(weight=class_weights)
             else:
                 pos_weight = torch.tensor([3.0], device=DEVICE)
@@ -1036,7 +1039,7 @@ enum TrainingScriptGenerator {
         switch method {
         case .l1Distance, .l2Distance:
             return """
-                    # Classification head (NUM_CLASSES=4 for 4-class, 1 for binary)
+                    # Classification head (NUM_CLASSES for multi-class, 1 for binary)
                     self.classifier = nn.Sequential(
                         nn.Linear(EMBEDDING_DIM, 64),
                         nn.ReLU(),
@@ -1046,7 +1049,7 @@ enum TrainingScriptGenerator {
             """
         case .concatenation:
             return """
-                    # Classification head (NUM_CLASSES=4 for 4-class, 1 for binary)
+                    # Classification head (NUM_CLASSES for multi-class, 1 for binary)
                     self.classifier = nn.Sequential(
                         nn.Linear(EMBEDDING_DIM * 2, 128),
                         nn.ReLU(),

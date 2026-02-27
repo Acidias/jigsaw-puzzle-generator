@@ -8,6 +8,7 @@ struct ContentView: View {
     @StateObject private var openverseState = OpenverseSearchState()
     @StateObject private var datasetState = DatasetState()
     @StateObject private var modelState = ModelState()
+    @StateObject private var chatState = ChatState()
     @State private var sidebarSelection: SidebarItem? = nil
     @State private var isDragTargeted = false
     @State private var errorMessage: String?
@@ -31,6 +32,8 @@ struct ContentView: View {
                         LocalImagesPanel(batchState: batchState)
                     case .batchOpenverse:
                         OpenversePanel(state: openverseState)
+                    case .aiChat:
+                        AIChatPanel(chatState: chatState, modelState: modelState, datasetState: datasetState)
                     case .datasetGeneration:
                         DatasetGenerationPanel(datasetState: datasetState)
                     case .dataset(let id):
@@ -181,6 +184,7 @@ struct ContentView: View {
             datasetState.loadDatasets()
             modelState.loadPresets()
             modelState.loadModels()
+            chatState.loadSession()
         }
     }
 
