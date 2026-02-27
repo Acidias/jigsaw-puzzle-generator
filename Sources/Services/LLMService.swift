@@ -137,8 +137,10 @@ enum LLMService {
     // MARK: - Claude API
 
     private static func streamClaude(chatState: ChatState, messageID: UUID) async throws -> [ChatToolCall] {
+        // Determine auth method: OAuth takes priority over API key
+        let useOAuth = ChatCredentialStore.isClaudeOAuthActive
         let apiKey = ChatCredentialStore.claudeAPIKey
-        guard !apiKey.isEmpty else { throw LLMError.missingAPIKey }
+        guard useOAuth || !apiKey.isEmpty else { throw LLMError.missingAPIKey }
 
         let modelID = await chatState.selectedModelID
         let messages = await buildClaudeMessages(chatState: chatState)
@@ -157,8 +159,15 @@ enum LLMService {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+
+        if useOAuth {
+            let token = try await ClaudeOAuthService.getValidToken()
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        }
+
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
