@@ -221,30 +221,24 @@ enum ChatToolExecutor {
         do {
             let response = try await OpenverseAPI.search(params: params)
 
-            // Cache results for download_images attribution lookup
+            // Cache all results for download_images attribution lookup
             for image in response.results {
                 openverseCache[image.url] = image
             }
 
-            let images = response.results.map { img -> [String: Any] in
-                var info: [String: Any] = [
-                    "id": img.id,
-                    "url": img.url,
-                    "license": img.license,
-                ]
+            // Return compact list: just url + title (LLM needs URLs for download_images)
+            // Full metadata (creator, licence, dimensions) is preserved in the cache
+            let urls = response.results.map { img -> [String: Any] in
+                var info: [String: Any] = ["url": img.url]
                 if let title = img.title { info["title"] = title }
-                if let w = img.width, let h = img.height {
-                    info["dimensions"] = "\(w)x\(h)"
-                }
-                if let creator = img.creator { info["creator"] = creator }
-                if let version = img.licenseVersion { info["license_version"] = version }
                 return info
             }
 
             return jsonString([
                 "result_count": response.resultCount,
-                "returned": images.count,
-                "images": images,
+                "returned": urls.count,
+                "images": urls,
+                "note": "All results cached with full attribution. Pass URLs to download_images to add to a project.",
             ] as [String: Any])
         } catch {
             return errorResult("Openverse search failed: \(error.localizedDescription)")
