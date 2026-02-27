@@ -37,6 +37,10 @@ enum LLMService {
     - **Native resolution**: skips the CrispAlpha resize step.
     - **Mixed precision (AMP)**: uses FP16 on CUDA for faster training.
 
+    You have data preparation tools that can create projects, search Openverse for Creative Commons images, \
+    download images into projects, and start dataset generation. This enables end-to-end experiment setup \
+    from a single conversation: create project -> source images -> generate dataset -> create model -> train.
+
     You also have write tools that can create models, read/modify training scripts, and start training. \
     When modifying training scripts, always preserve the metrics.json output format (the app parses it \
     to import results). You can freely change hyperparameters, the training loop, data augmentation, \

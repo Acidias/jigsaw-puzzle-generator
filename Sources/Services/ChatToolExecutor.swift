@@ -7,6 +7,10 @@ import Foundation
 @MainActor
 enum ChatToolExecutor {
 
+    /// Cache of Openverse search results keyed by image URL.
+    /// Populated by search_openverse, consumed by download_images for attribution lookup.
+    nonisolated(unsafe) private static var openverseCache: [String: OpenverseImage] = [:]
+
     static func execute(
         toolName: String,
         arguments: String,
@@ -68,6 +72,35 @@ enum ChatToolExecutor {
             let imageName = args["image_name"] as? String
             let count = min((args["count"] as? Int) ?? 4, 8)
             return getPieceImages(projectID: projectID, cutID: cutID, imageName: imageName, count: count, appState: appState)
+
+        // Data preparation tools
+        case "create_project":
+            guard let name = args["name"] as? String else {
+                return (errorResult("Missing required parameter: name"), [])
+            }
+            return (createProject(name: name, appState: appState), [])
+        case "search_openverse":
+            guard let query = args["query"] as? String else {
+                return (errorResult("Missing required parameter: query"), [])
+            }
+            let size = args["size"] as? String
+            let category = args["category"] as? String
+            let licenseType = args["license_type"] as? String
+            let maxResults = args["max_results"] as? Int
+            return (await searchOpenverse(query: query, size: size, category: category, licenseType: licenseType, maxResults: maxResults), [])
+        case "download_images":
+            guard let projectID = args["project_id"] as? String else {
+                return (errorResult("Missing required parameter: project_id"), [])
+            }
+            guard let urls = args["urls"] as? [String] else {
+                return (errorResult("Missing required parameter: urls"), [])
+            }
+            return (await downloadImages(projectID: projectID, urls: urls, appState: appState), [])
+        case "generate_dataset":
+            guard let projectID = args["project_id"] as? String else {
+                return (errorResult("Missing required parameter: project_id"), [])
+            }
+            return (generateDataset(projectID: projectID, args: args, appState: appState, datasetState: datasetState), [])
 
         // Write tools
         case "create_model":
@@ -148,6 +181,215 @@ enum ChatToolExecutor {
             mediaType: "image/png",
             label: label
         )
+    }
+
+    // MARK: - Data Preparation Tool Implementations
+
+    private static func createProject(name: String, appState: AppState) -> String {
+        let project = PuzzleProject(name: name)
+        appState.addProject(project)
+        appState.saveProject(project)
+
+        return jsonString([
+            "project_id": project.id.uuidString,
+            "name": project.name,
+            "created_at": ISO8601DateFormatter().string(from: project.createdAt),
+        ])
+    }
+
+    private static func searchOpenverse(
+        query: String,
+        size: String?,
+        category: String?,
+        licenseType: String?,
+        maxResults: Int?
+    ) async -> String {
+        var params = OpenverseSearchParams()
+        params.query = query
+        params.pageSize = min(maxResults ?? 20, 200)
+
+        if let size = size {
+            params.size = OpenverseSearchParams.OpenverseSize(rawValue: size)
+        }
+        if let category = category {
+            params.category = OpenverseSearchParams.OpenverseCategory(rawValue: category)
+        }
+        if let licenseType = licenseType {
+            params.licenseType = OpenverseSearchParams.OpenverseLicenceType(rawValue: licenseType)
+        }
+
+        do {
+            let response = try await OpenverseAPI.search(params: params)
+
+            // Cache results for download_images attribution lookup
+            for image in response.results {
+                openverseCache[image.url] = image
+            }
+
+            let images = response.results.map { img -> [String: Any] in
+                var info: [String: Any] = [
+                    "id": img.id,
+                    "url": img.url,
+                    "license": img.license,
+                ]
+                if let title = img.title { info["title"] = title }
+                if let w = img.width, let h = img.height {
+                    info["dimensions"] = "\(w)x\(h)"
+                }
+                if let creator = img.creator { info["creator"] = creator }
+                if let version = img.licenseVersion { info["license_version"] = version }
+                return info
+            }
+
+            return jsonString([
+                "result_count": response.resultCount,
+                "returned": images.count,
+                "images": images,
+            ] as [String: Any])
+        } catch {
+            return errorResult("Openverse search failed: \(error.localizedDescription)")
+        }
+    }
+
+    private static func downloadImages(
+        projectID: String,
+        urls: [String],
+        appState: AppState
+    ) async -> String {
+        guard let projectUUID = UUID(uuidString: projectID),
+              let project = appState.projects.first(where: { $0.id == projectUUID }) else {
+            return errorResult("Project not found with ID: \(projectID)")
+        }
+
+        guard !urls.isEmpty else {
+            return errorResult("No URLs provided.")
+        }
+
+        var downloaded = 0
+        var failed = 0
+        var results: [[String: Any]] = []
+
+        for urlString in urls {
+            do {
+                let (nsImage, tempURL) = try await OpenverseAPI.downloadImage(from: urlString)
+
+                // Determine name from cache or URL filename
+                let cachedImage = openverseCache[urlString]
+                let name: String
+                if let title = cachedImage?.title, !title.trimmingCharacters(in: .whitespaces).isEmpty {
+                    name = title
+                } else {
+                    name = URL(string: urlString)?.deletingPathExtension().lastPathComponent ?? "image_\(downloaded + 1)"
+                }
+
+                let puzzleImage = PuzzleImage(
+                    name: name,
+                    sourceImage: nsImage,
+                    sourceImageURL: tempURL
+                )
+
+                // Attach attribution from cache if available
+                if let cachedImage = cachedImage {
+                    puzzleImage.attribution = cachedImage.toAttribution()
+                }
+
+                appState.addImage(puzzleImage, to: project)
+                ProjectStore.copySourceImage(puzzleImage, to: project)
+                appState.saveProject(project)
+
+                downloaded += 1
+                results.append([
+                    "url": urlString,
+                    "status": "ok",
+                    "name": name,
+                ])
+            } catch {
+                failed += 1
+                results.append([
+                    "url": urlString,
+                    "status": "failed",
+                    "error": error.localizedDescription,
+                ])
+            }
+        }
+
+        return jsonString([
+            "project": project.name,
+            "downloaded": downloaded,
+            "failed": failed,
+            "results": results,
+        ] as [String: Any])
+    }
+
+    private static func generateDataset(
+        projectID: String,
+        args: [String: Any],
+        appState: AppState,
+        datasetState: DatasetState
+    ) -> String {
+        guard let projectUUID = UUID(uuidString: projectID),
+              let project = appState.projects.first(where: { $0.id == projectUUID }) else {
+            return errorResult("Project not found with ID: \(projectID)")
+        }
+
+        guard project.images.count >= 2 else {
+            return errorResult("Project '\(project.name)' has \(project.images.count) image(s). At least 2 are required for dataset generation.")
+        }
+
+        guard !datasetState.isRunning else {
+            return errorResult("Dataset generation is already in progress.")
+        }
+
+        // Build configuration from args with defaults
+        var config = DatasetConfiguration()
+        config.projectID = project.id
+        config.rows = (args["rows"] as? Int) ?? 1
+        config.columns = (args["columns"] as? Int) ?? 2
+        config.pieceSize = (args["piece_size"] as? Int) ?? 224
+        if let fillStr = args["piece_fill"] as? String, let fill = PieceFill(rawValue: fillStr) {
+            config.pieceFill = fill
+        } else {
+            config.pieceFill = .black
+        }
+        config.cutsPerImage = (args["cuts_per_image"] as? Int) ?? 10
+        config.correctCount = (args["correct_count"] as? Int) ?? 500
+        config.wrongShapeMatchCount = (args["wrong_shape_match_count"] as? Int) ?? 500
+        config.wrongOrientationCount = (args["wrong_orientation_count"] as? Int) ?? 500
+        config.wrongImageMatchCount = (args["wrong_image_match_count"] as? Int) ?? 500
+        config.wrongNothingCount = (args["wrong_nothing_count"] as? Int) ?? 500
+
+        // Parse ratios (may come as Int or Double from JSON)
+        if let v = args["train_ratio"] { config.trainRatio = toDouble(v) ?? 0.70 }
+        if let v = args["test_ratio"] { config.testRatio = toDouble(v) ?? 0.15 }
+        if let v = args["valid_ratio"] { config.validRatio = toDouble(v) ?? 0.15 }
+
+        // Set dataset name
+        let datasetName = (args["name"] as? String)
+            ?? "\(project.name) - \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+
+        datasetState.configuration = config
+
+        // Fire off generation in a detached task
+        Task.detached { @MainActor in
+            await DatasetGenerator.generate(state: datasetState, project: project, name: datasetName)
+        }
+
+        return jsonString([
+            "message": "Dataset generation started. Monitor progress in the Dataset Generation panel.",
+            "project": project.name,
+            "dataset_name": datasetName,
+            "grid": "\(config.columns)x\(config.rows)",
+            "piece_size": config.pieceSize,
+            "total_pairs": config.totalPairs,
+        ] as [String: Any])
+    }
+
+    /// Helper to parse a JSON value that may be Int or Double into a Double.
+    private static func toDouble(_ value: Any) -> Double? {
+        if let d = value as? Double { return d }
+        if let i = value as? Int { return Double(i) }
+        if let s = value as? String { return Double(s) }
+        return nil
     }
 
     // MARK: - Write Tool Implementations

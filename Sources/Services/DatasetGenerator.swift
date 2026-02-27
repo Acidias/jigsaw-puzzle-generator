@@ -39,7 +39,7 @@ enum DatasetGenerator {
     // MARK: - Main Entry Point
 
     @MainActor
-    static func generate(state: DatasetState, project: PuzzleProject) async {
+    static func generate(state: DatasetState, project: PuzzleProject, name: String? = nil) async {
         let config = state.configuration
         state.clearLog()
         state.status = .generating(phase: "Validating...", progress: 0.0)
@@ -359,9 +359,14 @@ enum DatasetGenerator {
         }
 
         // Create and persist the dataset
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
-        let datasetName = "\(project.name) - \(dateFormatter.string(from: Date()))"
+        let datasetName: String
+        if let name = name {
+            datasetName = name
+        } else {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+            datasetName = "\(project.name) - \(dateFormatter.string(from: Date()))"
+        }
 
         let dataset = PuzzleDataset(
             id: datasetID,

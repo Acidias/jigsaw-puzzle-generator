@@ -180,6 +180,56 @@ enum ChatTools {
             ]
         ),
 
+        // MARK: - Data Preparation Tools
+
+        ChatToolDefinition(
+            name: "create_project",
+            description: "Create a new puzzle project. Returns the project ID, name, and created date.",
+            parameters: [
+                ChatToolParam(name: "name", description: "Name for the new project"),
+            ]
+        ),
+        ChatToolDefinition(
+            name: "search_openverse",
+            description: "Search Openverse for Creative Commons images. Results are cached so download_images can look up attribution. Note: anonymous rate limit is 100 requests/day, 5/hour.",
+            parameters: [
+                ChatToolParam(name: "query", description: "Search query (e.g. 'ocean photographs', 'forest landscape')"),
+                ChatToolParam(name: "size", description: "Image size filter: small, medium, or large", isRequired: false),
+                ChatToolParam(name: "category", description: "Image category: photograph, illustration, or digitized_artwork", isRequired: false),
+                ChatToolParam(name: "license_type", description: "Licence filter: commercial, modification, or all-cc", isRequired: false),
+                ChatToolParam(name: "max_results", type: "integer", description: "Maximum number of results to return (default: 20, max: 200)", isRequired: false),
+            ]
+        ),
+        ChatToolDefinition(
+            name: "download_images",
+            description: "Download images into a project by URL. If the URL was returned by search_openverse, attribution is automatically attached. Downloads are sequential (typically 1-2s per image).",
+            parameters: [
+                ChatToolParam(name: "project_id", description: "The UUID of the project to add images to"),
+                ChatToolParam(name: "urls", type: "array", description: "Array of image URLs to download", itemType: "string"),
+            ]
+        ),
+        ChatToolDefinition(
+            name: "generate_dataset",
+            description: "Start dataset generation from a project. The project must have at least 2 images. Generation runs asynchronously - this returns immediately. Progress is visible in the Dataset Generation panel.",
+            parameters: [
+                ChatToolParam(name: "project_id", description: "The UUID of the source project"),
+                ChatToolParam(name: "name", description: "Name for the dataset (default: project name + timestamp)", isRequired: false),
+                ChatToolParam(name: "rows", type: "integer", description: "Grid rows (default: 1)", isRequired: false),
+                ChatToolParam(name: "columns", type: "integer", description: "Grid columns (default: 2)", isRequired: false),
+                ChatToolParam(name: "piece_size", type: "integer", description: "Piece size in pixels (default: 224)", isRequired: false),
+                ChatToolParam(name: "piece_fill", description: "Background fill: none, black, white, or grey (default: black)", isRequired: false),
+                ChatToolParam(name: "cuts_per_image", type: "integer", description: "Number of random cuts per image (default: 10)", isRequired: false),
+                ChatToolParam(name: "correct_count", type: "integer", description: "Number of correct pairs (default: 500)", isRequired: false),
+                ChatToolParam(name: "wrong_shape_match_count", type: "integer", description: "Number of wrong shape match pairs (default: 500)", isRequired: false),
+                ChatToolParam(name: "wrong_orientation_count", type: "integer", description: "Number of wrong orientation pairs (default: 500)", isRequired: false),
+                ChatToolParam(name: "wrong_image_match_count", type: "integer", description: "Number of wrong image match pairs (default: 500)", isRequired: false),
+                ChatToolParam(name: "wrong_nothing_count", type: "integer", description: "Number of wrong nothing pairs (default: 500)", isRequired: false),
+                ChatToolParam(name: "train_ratio", description: "Training split ratio (default: 0.70)", isRequired: false),
+                ChatToolParam(name: "test_ratio", description: "Test split ratio (default: 0.15)", isRequired: false),
+                ChatToolParam(name: "valid_ratio", description: "Validation split ratio (default: 0.15)", isRequired: false),
+            ]
+        ),
+
         // MARK: - Write Tools
 
         ChatToolDefinition(
