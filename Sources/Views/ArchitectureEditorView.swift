@@ -186,6 +186,31 @@ struct ArchitectureEditorView: View {
                 Toggle("Mixed Precision (AMP)", isOn: $architecture.useMixedPrecision)
                     .font(.callout)
                     .help("Use FP16 on CUDA for faster training")
+
+                Divider()
+
+                Toggle("4-Class Output (Softmax)", isOn: $architecture.useFourClass)
+                    .font(.callout)
+                    .help("Classify into correct/wrongShape/wrongImage/wrongNothing instead of binary match")
+
+                Toggle("Seam-Only Input", isOn: $architecture.useSeamOnly)
+                    .font(.callout)
+                    .help("Crop strips around the touching edge instead of full pieces")
+
+                if architecture.useSeamOnly {
+                    HStack {
+                        Text("Seam width:")
+                            .font(.callout)
+                        TextField("32", value: $architecture.seamWidth, format: .number)
+                            .frame(width: 60)
+                            .textFieldStyle(.roundedBorder)
+                        Stepper("", value: $architecture.seamWidth, in: 16...128, step: 8)
+                            .labelsHidden()
+                        Text("px")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .padding(8)
         }

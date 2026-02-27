@@ -449,6 +449,17 @@ enum DatasetGenerator {
         return pairs
     }
 
+    /// Derive direction and left-piece edge index from an adjacent position.
+    /// Horizontal neighbour (same row): direction "R", left piece's right edge (index 1).
+    /// Vertical neighbour (same col): direction "D", left piece's bottom edge (index 2).
+    private static func edgeInfo(for pos: AdjacentPosition) -> (direction: String, leftEdgeIndex: Int) {
+        if pos.r1 == pos.r2 {
+            return ("R", 1)  // horizontal: left piece's right edge
+        } else {
+            return ("D", 2)  // vertical: left piece's bottom edge
+        }
+    }
+
     private static func sampleOnePair(
         category: DatasetCategory,
         imageIDs: [UUID],
@@ -459,6 +470,7 @@ enum DatasetGenerator {
         pairID: Int
     ) -> DatasetPair? {
         guard let pos = adjacentPositions.randomElement() else { return nil }
+        let (direction, leftEdgeIndex) = edgeInfo(for: pos)
 
         switch category {
         case .correct:
@@ -468,7 +480,8 @@ enum DatasetGenerator {
                   let pieces = pieceLookup[imageID]?[cutIndex],
                   let left = piece(atRow: pos.r1, col: pos.c1, in: pieces),
                   let right = piece(atRow: pos.r2, col: pos.c2, in: pieces) else { return nil }
-            return DatasetPair(left: left, right: right, category: .correct, pairID: pairID)
+            return DatasetPair(left: left, right: right, category: .correct, pairID: pairID,
+                               direction: direction, leftEdgeIndex: leftEdgeIndex)
 
         case .wrongShapeMatch:
             // Same cut (shared GridEdges), same pair position, different images
@@ -481,7 +494,8 @@ enum DatasetGenerator {
                   let piecesB = pieceLookup[imageB]?[cutIndex],
                   let left = piece(atRow: pos.r1, col: pos.c1, in: piecesA),
                   let right = piece(atRow: pos.r2, col: pos.c2, in: piecesB) else { return nil }
-            return DatasetPair(left: left, right: right, category: .wrongShapeMatch, pairID: pairID)
+            return DatasetPair(left: left, right: right, category: .wrongShapeMatch, pairID: pairID,
+                               direction: direction, leftEdgeIndex: leftEdgeIndex)
 
         case .wrongImageMatch:
             // Same image, same pair position, different cuts
@@ -494,7 +508,8 @@ enum DatasetGenerator {
                   let piecesB = pieceLookup[imageID]?[cutB],
                   let left = piece(atRow: pos.r1, col: pos.c1, in: piecesA),
                   let right = piece(atRow: pos.r2, col: pos.c2, in: piecesB) else { return nil }
-            return DatasetPair(left: left, right: right, category: .wrongImageMatch, pairID: pairID)
+            return DatasetPair(left: left, right: right, category: .wrongImageMatch, pairID: pairID,
+                               direction: direction, leftEdgeIndex: leftEdgeIndex)
 
         case .wrongNothing:
             // Different images, different cuts, random pair position
@@ -509,18 +524,23 @@ enum DatasetGenerator {
                   let piecesB = pieceLookup[imageB]?[cutB],
                   let left = piece(atRow: pos.r1, col: pos.c1, in: piecesA),
                   let right = piece(atRow: pos.r2, col: pos.c2, in: piecesB) else { return nil }
-            return DatasetPair(left: left, right: right, category: .wrongNothing, pairID: pairID)
+            return DatasetPair(left: left, right: right, category: .wrongNothing, pairID: pairID,
+                               direction: direction, leftEdgeIndex: leftEdgeIndex)
         }
     }
 
     // MARK: - Output Writing
 
     private static func writeLabels(to splitDir: URL, split: DatasetSplit, pairs: [DatasetPair]) {
-        var csv = "pair_id,category,left_file,right_file,label\n"
+        var csv = "pair_id,category,left_file,right_file,label,puzzle_id,left_piece_id,right_piece_id,direction,left_edge_index\n"
         for pair in pairs {
             let leftFile = "\(pair.category.rawValue)/pair_\(String(format: "%04d", pair.pairID))_left.png"
             let rightFile = "\(pair.category.rawValue)/pair_\(String(format: "%04d", pair.pairID))_right.png"
-            csv += "\(pair.pairID),\(pair.category.rawValue),\(leftFile),\(rightFile),\(pair.category.label)\n"
+            let puzzleID = "\(pair.left.imageID.uuidString)-\(pair.left.cutIndex)"
+            let leftPieceID = "\(pair.left.gridRow)_\(pair.left.gridCol)"
+            let rightPieceID = "\(pair.right.gridRow)_\(pair.right.gridCol)"
+            csv += "\(pair.pairID),\(pair.category.rawValue),\(leftFile),\(rightFile),\(pair.category.label),"
+            csv += "\(puzzleID),\(leftPieceID),\(rightPieceID),\(pair.direction),\(pair.leftEdgeIndex)\n"
         }
         let labelsURL = splitDir.appendingPathComponent("labels.csv")
         try? csv.write(to: labelsURL, atomically: true, encoding: .utf8)

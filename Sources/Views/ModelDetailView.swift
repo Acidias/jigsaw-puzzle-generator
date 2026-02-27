@@ -730,6 +730,10 @@ struct ModelDetailView: View {
                 rankingMetricsView(ranking)
             }
 
+            if let fourClass = metrics.fourClassMetrics {
+                fourClassMetricsView(fourClass)
+            }
+
             if let runInfo = metrics.trainingRunInfo {
                 trainingRunInfoView(runInfo)
             }
@@ -808,10 +812,111 @@ struct ModelDetailView: View {
 
     private func rankingMetricsView(_ ranking: RankingMetrics) -> some View {
         GroupBox("Ranking Metrics") {
-            HStack(spacing: 16) {
-                statBadge(value: String(format: "%.3f", ranking.recallAt1), label: "R@1", colour: .purple)
-                statBadge(value: String(format: "%.3f", ranking.recallAt5), label: "R@5", colour: .purple)
-                statBadge(value: String(format: "%.3f", ranking.recallAt10), label: "R@10", colour: .purple)
+            VStack(spacing: 8) {
+                HStack(spacing: 16) {
+                    statBadge(value: String(format: "%.3f", ranking.recallAt1), label: "R@1", colour: .purple)
+                    statBadge(value: String(format: "%.3f", ranking.recallAt5), label: "R@5", colour: .purple)
+                    statBadge(value: String(format: "%.3f", ranking.recallAt10), label: "R@10", colour: .purple)
+                }
+
+                if let edgeCount = ranking.edgeQueryCount, let avgPool = ranking.avgPoolSize {
+                    Text("\(edgeCount) edges, avg \(String(format: "%.1f", avgPool)) candidates")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    // MARK: - 4-Class Metrics
+
+    private func fourClassMetricsView(_ metrics: FourClassMetrics) -> some View {
+        GroupBox("4-Class Classification") {
+            VStack(spacing: 12) {
+                // Overall accuracy
+                HStack(spacing: 16) {
+                    statBadge(
+                        value: String(format: "%.1f%%", metrics.accuracy * 100),
+                        label: "4-Class Accuracy",
+                        colour: .indigo
+                    )
+                }
+
+                // Per-class accuracy
+                let classOrder = ["correct", "wrong_shape_match", "wrong_image_match", "wrong_nothing"]
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        Text("Class")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Accuracy")
+                            .frame(width: 80)
+                    }
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 8)
+
+                    Divider()
+
+                    ForEach(classOrder, id: \.self) { cls in
+                        if let acc = metrics.perClassAccuracy[cls] {
+                            HStack(spacing: 0) {
+                                Text(categoryDisplayName(cls))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(String(format: "%.1f%%", acc * 100))
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(acc >= 0.8 ? .green : acc >= 0.5 ? .orange : .red)
+                                    .frame(width: 80)
+                            }
+                            .font(.callout.monospacedDigit())
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                        }
+                    }
+                }
+
+                // 4x4 confusion matrix
+                let labels = ["Corr", "Shape", "Image", "None"]
+                VStack(spacing: 0) {
+                    Text("Confusion Matrix (4x4)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .padding(.bottom, 4)
+
+                    // Column headers
+                    HStack(spacing: 0) {
+                        Text("")
+                            .frame(width: 55)
+                        ForEach(labels, id: \.self) { label in
+                            Text(label)
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+
+                    // Rows
+                    ForEach(0..<4, id: \.self) { row in
+                        HStack(spacing: 0) {
+                            Text(labels[row])
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .frame(width: 55, alignment: .trailing)
+                            ForEach(0..<4, id: \.self) { col in
+                                let value = row < metrics.confusionMatrix4x4.count && col < metrics.confusionMatrix4x4[row].count
+                                    ? metrics.confusionMatrix4x4[row][col] : 0
+                                let isDiagonal = row == col
+                                Text("\(value)")
+                                    .font(.callout.monospacedDigit())
+                                    .fontWeight(isDiagonal ? .bold : .regular)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                                    .background(isDiagonal ? Color.green.opacity(0.08) : Color.red.opacity(value > 0 ? 0.05 : 0))
+                            }
+                        }
+                    }
+                }
             }
             .padding(8)
         }

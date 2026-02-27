@@ -392,6 +392,8 @@ struct ModelTrainingPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text("Status")
                         .frame(width: 70)
+                    Text("Mode")
+                        .frame(width: 65)
                     Text("Dataset")
                         .frame(width: 100)
                     Text("Preset")
@@ -442,6 +444,13 @@ struct ModelTrainingPanel: View {
     private func comparisonRow(_ model: SiameseModel) -> some View {
         let arch = model.architecture
         let archSummary = "\(arch.convBlocks.count)blk \(arch.embeddingDimension)-d \(arch.comparisonMethod.shortName)"
+
+        let modeText: String = {
+            var parts: [String] = []
+            if arch.useFourClass { parts.append("4C") }
+            if arch.useSeamOnly { parts.append("Seam") }
+            return parts.isEmpty ? "-" : parts.joined(separator: "+")
+        }()
 
         let accText: String = {
             if let acc = model.metrics?.testAccuracy {
@@ -509,6 +518,9 @@ struct ModelTrainingPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             comparisonStatusText(model.status)
                 .frame(width: 70)
+            Text(modeText)
+                .foregroundStyle(modeText != "-" ? .cyan : .primary)
+                .frame(width: 65)
             Text(model.sourceDatasetName)
                 .lineLimit(1)
                 .frame(width: 100)

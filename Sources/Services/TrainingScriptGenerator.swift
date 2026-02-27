@@ -51,6 +51,11 @@ enum TrainingScriptGenerator {
         DROPOUT = \(arch.dropout)
         USE_NATIVE_RESOLUTION = \(arch.useNativeResolution ? "True" : "False")
         USE_AMP = \(arch.useMixedPrecision ? "True" : "False")
+        USE_FOUR_CLASS = \(arch.useFourClass ? "True" : "False")
+        USE_SEAM_ONLY = \(arch.useSeamOnly ? "True" : "False")
+        SEAM_WIDTH = \(arch.seamWidth)
+        NUM_CLASSES = 4 if USE_FOUR_CLASS else 1
+        CATEGORY_TO_IDX = {"correct": 0, "wrong_shape_match": 1, "wrong_image_match": 2, "wrong_nothing": 3}
         NUM_WORKERS = min(os.cpu_count() or 1, \(arch.devicePreference == .cuda ? 8 : 4))
 
         \(generateDeviceSelectionPython(arch.devicePreference))
@@ -58,29 +63,61 @@ enum TrainingScriptGenerator {
 
         # ── Dataset ────────────────────────────────────────────────────
 
+        class SeamCropper:
+            \"\"\"Crop fixed-width strips from the touching edge of each piece.\"\"\"
+
+            def __init__(self, seam_width):
+                self.seam_width = seam_width
+
+            def __call__(self, left_img, right_img, direction):
+                w, h = left_img.size
+                sw = min(self.seam_width, w, h)
+                if direction == "R":
+                    left_strip = left_img.crop((w - sw, 0, w, h))
+                    right_strip = right_img.crop((0, 0, sw, h))
+                else:  # "D"
+                    left_strip = left_img.crop((0, h - sw, w, h))
+                    right_strip = right_img.crop((0, 0, w, sw))
+                return left_strip, right_strip
+
+
         class JigsawPairDataset(Dataset):
             \"\"\"Loads jigsaw piece pairs from the dataset directory structure.\"\"\"
 
-            def __init__(self, split_dir, transform=None, pair_augment=None):
+            def __init__(self, split_dir, transform=None, pair_augment=None, seam_cropper=None):
+                self.split_dir = split_dir
                 self.transform = transform
                 self.pair_augment = pair_augment
+                self.seam_cropper = seam_cropper
                 self.pairs = []
                 self.categories = []
+                self.directions = []
+                self.edge_info = []  # (puzzle_id, left_piece_id, direction) for per-edge ranking
 
                 labels_path = os.path.join(split_dir, "labels.csv")
                 if not os.path.exists(labels_path):
-                    # Scan directories if no labels.csv
                     self._scan_directories(split_dir)
                 else:
                     df = pd.read_csv(labels_path)
+                    has_direction = "direction" in df.columns
+                    has_edge_info = "puzzle_id" in df.columns
                     for _, row in df.iterrows():
                         left_path = os.path.join(split_dir, row["left_file"])
                         right_path = os.path.join(split_dir, row["right_file"])
                         label = int(row["label"])
-                        category = row["left_file"].split("/")[0]
+                        category = row.get("category", row["left_file"].split("/")[0])
                         if os.path.exists(left_path) and os.path.exists(right_path):
-                            self.pairs.append((left_path, right_path, label))
+                            self.pairs.append((left_path, right_path, label, category))
                             self.categories.append(category)
+                            self.directions.append(row["direction"] if has_direction else "R")
+                            if has_edge_info:
+                                self.edge_info.append((
+                                    str(row["puzzle_id"]),
+                                    str(row["left_piece_id"]),
+                                    row["direction"] if has_direction else "R",
+                                ))
+                            else:
+                                self.edge_info.append(None)
 
             def _scan_directories(self, split_dir):
                 for category in os.listdir(split_dir):
@@ -96,16 +133,22 @@ enum TrainingScriptGenerator {
                         left_path = os.path.join(cat_dir, lf)
                         right_path = os.path.join(cat_dir, rf)
                         if os.path.exists(right_path):
-                            self.pairs.append((left_path, right_path, label))
+                            self.pairs.append((left_path, right_path, label, category))
                             self.categories.append(category)
+                            self.directions.append("R")
+                            self.edge_info.append(None)
 
             def __len__(self):
                 return len(self.pairs)
 
             def __getitem__(self, idx):
-                left_path, right_path, label = self.pairs[idx]
+                left_path, right_path, label, category = self.pairs[idx]
                 left_img = Image.open(left_path).convert("RGBA")
                 right_img = Image.open(right_path).convert("RGBA")
+
+                if self.seam_cropper:
+                    direction = self.directions[idx]
+                    left_img, right_img = self.seam_cropper(left_img, right_img, direction)
 
                 if self.pair_augment:
                     left_img, right_img = self.pair_augment(left_img, right_img)
@@ -114,6 +157,8 @@ enum TrainingScriptGenerator {
                     left_img = self.transform(left_img)
                     right_img = self.transform(right_img)
 
+                if USE_FOUR_CLASS:
+                    return left_img, right_img, torch.tensor(CATEGORY_TO_IDX[category], dtype=torch.long)
                 return left_img, right_img, torch.tensor(label, dtype=torch.float32)
 
 
@@ -175,15 +220,21 @@ enum TrainingScriptGenerator {
 
                 optimiser.zero_grad()
                 with torch.amp.autocast("cuda", enabled=use_amp):
-                    outputs = model(left, right).squeeze()
-                    loss = criterion(outputs, labels)
+                    outputs = model(left, right)
+                    if USE_FOUR_CLASS:
+                        loss = criterion(outputs, labels)
+                        preds = outputs.detach().argmax(dim=1)
+                        correct += (preds == labels).sum().item()
+                    else:
+                        outputs = outputs.squeeze()
+                        loss = criterion(outputs, labels)
+                        preds = (outputs.detach() > 0.0).float()
+                        correct += (preds == labels).sum().item()
                 scaler.scale(loss).backward()
                 scaler.step(optimiser)
                 scaler.update()
 
                 total_loss += loss.item() * labels.size(0)
-                preds = (outputs.detach() > 0.0).float()
-                correct += (preds == labels).sum().item()
                 total += labels.size(0)
 
             return total_loss / total, correct / total
@@ -201,29 +252,46 @@ enum TrainingScriptGenerator {
                 for left, right, labels in loader:
                     left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
 
-                    outputs = model(left, right).squeeze()
-                    loss = criterion(outputs, labels)
+                    outputs = model(left, right)
+                    if USE_FOUR_CLASS:
+                        loss = criterion(outputs, labels)
+                        preds = outputs.argmax(dim=1)
+                        correct += (preds == labels).sum().item()
+                        all_preds.extend(preds.cpu().numpy())
+                        all_labels.extend(labels.cpu().numpy())
+                    else:
+                        outputs = outputs.squeeze()
+                        loss = criterion(outputs, labels)
+                        preds = (outputs > threshold).float()
+                        correct += (preds == labels).sum().item()
+                        all_preds.extend(preds.cpu().numpy())
+                        all_labels.extend(labels.cpu().numpy())
 
                     total_loss += loss.item() * labels.size(0)
-                    preds = (outputs > threshold).float()
-                    correct += (preds == labels).sum().item()
                     total += labels.size(0)
-
-                    all_preds.extend(preds.cpu().numpy())
-                    all_labels.extend(labels.cpu().numpy())
 
             accuracy = correct / total if total > 0 else 0
             avg_loss = total_loss / total if total > 0 else 0
 
-            # Compute precision, recall, F1
-            all_preds = np.array(all_preds)
-            all_labels = np.array(all_labels)
-            tp = ((all_preds == 1) & (all_labels == 1)).sum()
-            fp = ((all_preds == 1) & (all_labels == 0)).sum()
-            fn = ((all_preds == 0) & (all_labels == 1)).sum()
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+            if USE_FOUR_CLASS:
+                # For 4-class: precision/recall/F1 defined on class 0 (correct) vs rest
+                all_preds = np.array(all_preds)
+                all_labels = np.array(all_labels)
+                tp = int(((all_preds == 0) & (all_labels == 0)).sum())
+                fp = int(((all_preds == 0) & (all_labels != 0)).sum())
+                fn = int(((all_preds != 0) & (all_labels == 0)).sum())
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+                f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+            else:
+                all_preds = np.array(all_preds)
+                all_labels = np.array(all_labels)
+                tp = ((all_preds == 1) & (all_labels == 1)).sum()
+                fp = ((all_preds == 1) & (all_labels == 0)).sum()
+                fn = ((all_preds == 0) & (all_labels == 1)).sum()
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+                f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
             return avg_loss, accuracy, float(precision), float(recall), float(f1)
 
@@ -247,19 +315,50 @@ enum TrainingScriptGenerator {
             with torch.no_grad():
                 for left, right, labels in loader:
                     left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
-                    outputs = model(left, right).squeeze()
-                    preds = (outputs > threshold).float()
+                    outputs = model(left, right)
+                    if USE_FOUR_CLASS:
+                        preds = outputs.argmax(dim=1)
+                    else:
+                        outputs = outputs.squeeze()
+                        preds = (outputs > threshold).float()
                     all_preds.extend(preds.cpu().numpy())
                     all_labels.extend(labels.cpu().numpy())
 
             all_preds = np.array(all_preds)
             all_labels = np.array(all_labels)
 
-            # Binary confusion matrix
-            tp = int(((all_preds == 1) & (all_labels == 1)).sum())
-            fp = int(((all_preds == 1) & (all_labels == 0)).sum())
-            fn = int(((all_preds == 0) & (all_labels == 1)).sum())
-            tn = int(((all_preds == 0) & (all_labels == 0)).sum())
+            four_class_metrics = None
+            if USE_FOUR_CLASS:
+                # 4x4 confusion matrix
+                cm_4x4 = [[0]*4 for _ in range(4)]
+                for true_cls, pred_cls in zip(all_labels, all_preds):
+                    cm_4x4[int(true_cls)][int(pred_cls)] += 1
+                # Per-class accuracy
+                idx_to_cat = {v: k for k, v in CATEGORY_TO_IDX.items()}
+                per_class_acc = {}
+                for cls_idx in range(4):
+                    cls_mask = all_labels == cls_idx
+                    cls_total = int(cls_mask.sum())
+                    cls_correct = int(((all_preds == cls_idx) & cls_mask).sum())
+                    cat_name = idx_to_cat.get(cls_idx, str(cls_idx))
+                    per_class_acc[cat_name] = round(cls_correct / cls_total, 6) if cls_total > 0 else 0.0
+                four_class_metrics = {
+                    "accuracy": round(float((all_preds == all_labels).mean()), 6),
+                    "perClassAccuracy": per_class_acc,
+                    "confusionMatrix4x4": cm_4x4,
+                }
+
+            # Binary confusion matrix (for 4-class: class 0 = positive, rest = negative)
+            if USE_FOUR_CLASS:
+                tp = int(((all_preds == 0) & (all_labels == 0)).sum())
+                fp = int(((all_preds == 0) & (all_labels != 0)).sum())
+                fn = int(((all_preds != 0) & (all_labels == 0)).sum())
+                tn = int(((all_preds != 0) & (all_labels != 0)).sum())
+            else:
+                tp = int(((all_preds == 1) & (all_labels == 1)).sum())
+                fp = int(((all_preds == 1) & (all_labels == 0)).sum())
+                fn = int(((all_preds == 0) & (all_labels == 1)).sum())
+                tn = int(((all_preds == 0) & (all_labels == 0)).sum())
 
             confusion_matrix = {
                 "truePositives": tp,
@@ -268,49 +367,67 @@ enum TrainingScriptGenerator {
                 "trueNegatives": tn,
             }
 
-            # Per-category breakdown (uses dataset.categories which parallels pairs order)
+            # Per-category breakdown
             per_category = {}
             for cat in sorted(set(dataset.categories)):
                 mask = np.array([c == cat for c in dataset.categories])
                 cat_preds = all_preds[mask]
+                cat_labels = all_labels[mask]
                 total = int(len(cat_preds))
-                predicted_match = int((cat_preds == 1).sum())
+                if USE_FOUR_CLASS:
+                    predicted_match = int((cat_preds == 0).sum())
+                else:
+                    predicted_match = int((cat_preds == 1).sum())
                 per_category[cat] = {
                     "total": total,
                     "predictedMatch": predicted_match,
                     "predictedNonMatch": total - predicted_match,
                 }
 
-            return confusion_matrix, per_category
+            return confusion_matrix, per_category, four_class_metrics
 
 
-        def find_optimal_threshold(model, loader):
-            \"\"\"Sweep logit thresholds on the validation set to maximise F1.
-            Uses sorted unique logits as thresholds for exact optimality.\"\"\"
+        def get_match_scores(model, loader):
+            \"\"\"Get match scores from model outputs.
+            Binary: raw logits (higher = more likely match).
+            4-class: P(correct) = softmax(logits)[:, 0] (higher = more likely correct).
+            Returns (scores, binary_labels) where binary_labels are 1=match, 0=non-match.\"\"\"
             model.eval()
-            all_logits = []
-            all_labels = []
+            all_scores = []
+            all_binary_labels = []
 
             with torch.no_grad():
                 for left, right, labels in loader:
                     left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
-                    outputs = model(left, right).squeeze()
-                    all_logits.extend(outputs.cpu().numpy())
-                    all_labels.extend(labels.cpu().numpy())
+                    outputs = model(left, right)
+                    if USE_FOUR_CLASS:
+                        probs = F.softmax(outputs, dim=1)
+                        scores = probs[:, 0]  # P(correct)
+                        binary = (labels == 0).float()  # class 0 = correct = match
+                    else:
+                        scores = outputs.squeeze()
+                        binary = labels
+                    all_scores.extend(scores.cpu().numpy())
+                    all_binary_labels.extend(binary.cpu().numpy())
 
-            all_logits = np.array(all_logits)
-            all_labels = np.array(all_labels)
+            return np.array(all_scores), np.array(all_binary_labels)
+
+
+        def find_optimal_threshold(model, loader):
+            \"\"\"Sweep thresholds on the validation set to maximise F1.
+            Uses sorted unique scores for exact optimality.\"\"\"
+            all_scores, all_labels = get_match_scores(model, loader)
 
             best_threshold = 0.0
             best_f1 = 0.0
 
-            for t in np.sort(np.unique(all_logits)):
-                preds = (all_logits > t).astype(float)
+            for t in np.sort(np.unique(all_scores)):
+                preds = (all_scores > t).astype(float)
                 tp = ((preds == 1) & (all_labels == 1)).sum()
                 fp = ((preds == 1) & (all_labels == 0)).sum()
                 fn = ((preds == 0) & (all_labels == 1)).sum()
                 if (tp + fp) == 0:
-                    continue  # No predicted positives - skip
+                    continue
                 prec = tp / (tp + fp)
                 rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
                 f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
@@ -324,38 +441,24 @@ enum TrainingScriptGenerator {
         def evaluate_standardised(model, valid_loader, test_loader, criterion,
                                   targets=(50, 60, 70, 80)):
             \"\"\"Find thresholds on validation set at fixed precision targets, then test.
-            Uses sorted unique logits for exact threshold search.
+            Uses match scores (logits for binary, P(correct) for 4-class).
             Targets are integer percentages (e.g. 70 = 70% precision).
             When a target is unachievable, emits status='unachievable' with null metrics.\"\"\"
-            model.eval()
-            all_logits = []
-            all_labels = []
+            val_scores, val_labels = get_match_scores(model, valid_loader)
+            thresholds = np.sort(np.unique(val_scores))
 
-            with torch.no_grad():
-                for left, right, labels in valid_loader:
-                    left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
-                    outputs = model(left, right).squeeze()
-                    all_logits.extend(outputs.cpu().numpy())
-                    all_labels.extend(labels.cpu().numpy())
-
-            all_logits = np.array(all_logits)
-            all_labels = np.array(all_labels)
-            thresholds = np.sort(np.unique(all_logits))
-
-            # For each precision target, find the lowest threshold (highest recall)
-            # that achieves at least that precision on the validation set
             target_thresholds = {}
             for target_pct in targets:
                 target_prec = target_pct / 100.0
                 best_recall = -1.0
                 best_t = None
                 for t in thresholds:
-                    preds = (all_logits > t).astype(float)
-                    tp = ((preds == 1) & (all_labels == 1)).sum()
-                    fp = ((preds == 1) & (all_labels == 0)).sum()
-                    fn = ((preds == 0) & (all_labels == 1)).sum()
+                    preds = (val_scores > t).astype(float)
+                    tp = ((preds == 1) & (val_labels == 1)).sum()
+                    fp = ((preds == 1) & (val_labels == 0)).sum()
+                    fn = ((preds == 0) & (val_labels == 1)).sum()
                     if (tp + fp) == 0:
-                        continue  # No predicted positives - can't measure precision
+                        continue
                     prec = tp / (tp + fp)
                     rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
                     if prec >= target_prec and rec > best_recall:
@@ -363,7 +466,8 @@ enum TrainingScriptGenerator {
                         best_t = float(t)
                 target_thresholds[target_pct] = best_t
 
-            # Apply each threshold to the test set for fair cross-model comparison
+            # Apply each threshold to the test set
+            test_scores, test_labels = get_match_scores(model, test_loader)
             results = []
             for target_pct in targets:
                 threshold = target_thresholds[target_pct]
@@ -384,25 +488,16 @@ enum TrainingScriptGenerator {
                     })
                     continue
 
-                _, test_acc, test_prec, test_rec, test_f1 = run_validation(
-                    model, test_loader, criterion, threshold=threshold,
-                )
-                # Compute confusion counts on test set at this threshold
-                t_logits = []
-                t_labels = []
-                with torch.no_grad():
-                    for left, right, labels in test_loader:
-                        left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
-                        outputs = model(left, right).squeeze()
-                        t_logits.extend(outputs.cpu().numpy())
-                        t_labels.extend(labels.cpu().numpy())
-                t_logits = np.array(t_logits)
-                t_labels = np.array(t_labels)
-                t_preds = (t_logits > threshold).astype(float)
-                tp = int(((t_preds == 1) & (t_labels == 1)).sum())
-                fp = int(((t_preds == 1) & (t_labels == 0)).sum())
-                fn = int(((t_preds == 0) & (t_labels == 1)).sum())
-                tn = int(((t_preds == 0) & (t_labels == 0)).sum())
+                t_preds = (test_scores > threshold).astype(float)
+                tp = int(((t_preds == 1) & (test_labels == 1)).sum())
+                fp = int(((t_preds == 1) & (test_labels == 0)).sum())
+                fn = int(((t_preds == 0) & (test_labels == 1)).sum())
+                tn = int(((t_preds == 0) & (test_labels == 0)).sum())
+                total = tp + fp + fn + tn
+                test_acc = (tp + tn) / total if total > 0 else 0.0
+                test_prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+                test_rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+                test_f1_val = 2 * test_prec * test_rec / (test_prec + test_rec) if (test_prec + test_rec) > 0 else 0.0
                 results.append({
                     "precisionTarget": target_pct,
                     "status": "achieved",
@@ -410,7 +505,7 @@ enum TrainingScriptGenerator {
                     "precision": round(test_prec, 6),
                     "recall": round(test_rec, 6),
                     "accuracy": round(test_acc, 6),
-                    "f1": round(test_f1, 6),
+                    "f1": round(test_f1_val, 6),
                     "predictedPositives": tp + fp,
                     "truePositives": tp,
                     "falsePositives": fp,
@@ -422,40 +517,99 @@ enum TrainingScriptGenerator {
 
 
         def compute_ranking_metrics(model, test_dataset):
-            \"\"\"Compute Recall@K ranking metrics on the test set.
-            For each positive pair, rank it among all negatives by logit similarity.
-            Recall@K = fraction of positives ranked in top K.\"\"\"
+            \"\"\"Compute per-edge Recall@K ranking metrics on the test set.
+            Groups pairs by (puzzle_id, left_piece_id, direction) when edge info is available.
+            For each edge query (correct pair), ranks it among all candidates sharing that edge.
+            Falls back to global ranking when edge info is not available (old datasets).\"\"\"
             model.eval()
-            pos_logits = []
-            neg_logits = []
-
             loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+            all_scores = []
+            all_binary_labels = []
             with torch.no_grad():
                 for left, right, labels in loader:
                     left, right, labels = left.to(DEVICE), right.to(DEVICE), labels.to(DEVICE)
-                    outputs = model(left, right).squeeze()
-                    for logit, label in zip(outputs.cpu().numpy(), labels.cpu().numpy()):
-                        if label == 1:
-                            pos_logits.append(float(logit))
-                        else:
-                            neg_logits.append(float(logit))
+                    outputs = model(left, right)
+                    if USE_FOUR_CLASS:
+                        probs = F.softmax(outputs, dim=1)
+                        scores = probs[:, 0].cpu().numpy()
+                        binary = (labels == 0).float().cpu().numpy()
+                    else:
+                        scores = outputs.squeeze().cpu().numpy()
+                        binary = labels.cpu().numpy()
+                    all_scores.extend(scores)
+                    all_binary_labels.extend(binary)
 
-            if not pos_logits or not neg_logits:
-                return {"recallAt1": 0.0, "recallAt5": 0.0, "recallAt10": 0.0}
+            all_scores = np.array(all_scores)
+            all_binary_labels = np.array(all_binary_labels)
 
-            neg_logits = np.array(sorted(neg_logits, reverse=True))
-            results = {}
-            for k in [1, 5, 10]:
-                hits = 0
-                for p in pos_logits:
-                    # Count how many negatives score higher than this positive
-                    rank = int((neg_logits > p).sum()) + 1  # 1-indexed rank
-                    if rank <= k:
-                        hits += 1
-                key = f"recallAt{k}"
-                results[key] = round(hits / len(pos_logits), 6)
+            # Check if per-edge info is available
+            has_edge_info = any(e is not None for e in test_dataset.edge_info)
 
-            return results
+            if has_edge_info:
+                # Per-edge ranking: group by (puzzle_id, left_piece_id, direction)
+                from collections import defaultdict
+                edge_groups = defaultdict(list)
+                for idx in range(len(test_dataset)):
+                    info = test_dataset.edge_info[idx]
+                    if info is None:
+                        continue
+                    puzzle_id, piece_id, direction = info
+                    key = (puzzle_id, piece_id, direction)
+                    edge_groups[key].append(idx)
+
+                total_queries = 0
+                pool_sizes = []
+                recall_hits = {1: 0, 5: 0, 10: 0}
+
+                for key, indices in edge_groups.items():
+                    if len(indices) < 2:
+                        continue
+                    group_scores = all_scores[indices]
+                    group_labels = all_binary_labels[indices]
+                    pos_mask = group_labels == 1
+                    if pos_mask.sum() == 0:
+                        continue
+
+                    pool_sizes.append(len(indices))
+                    neg_scores_sorted = np.sort(group_scores[~pos_mask])[::-1]
+
+                    for pos_idx in np.where(pos_mask)[0]:
+                        total_queries += 1
+                        pos_score = group_scores[pos_idx]
+                        rank = int((neg_scores_sorted > pos_score).sum()) + 1
+                        for k in [1, 5, 10]:
+                            if rank <= k:
+                                recall_hits[k] += 1
+
+                if total_queries == 0:
+                    return {"recallAt1": 0.0, "recallAt5": 0.0, "recallAt10": 0.0,
+                            "edgeQueryCount": 0, "avgPoolSize": 0.0}
+
+                results = {}
+                for k in [1, 5, 10]:
+                    results[f"recallAt{k}"] = round(recall_hits[k] / total_queries, 6)
+                results["edgeQueryCount"] = total_queries
+                results["avgPoolSize"] = round(np.mean(pool_sizes), 2) if pool_sizes else 0.0
+                return results
+
+            else:
+                # Global ranking fallback (old datasets without edge info)
+                pos_scores = all_scores[all_binary_labels == 1]
+                neg_scores = np.sort(all_scores[all_binary_labels == 0])[::-1]
+
+                if len(pos_scores) == 0 or len(neg_scores) == 0:
+                    return {"recallAt1": 0.0, "recallAt5": 0.0, "recallAt10": 0.0}
+
+                results = {}
+                for k in [1, 5, 10]:
+                    hits = 0
+                    for p in pos_scores:
+                        rank = int((neg_scores > p).sum()) + 1
+                        if rank <= k:
+                            hits += 1
+                    results[f"recallAt{k}"] = round(hits / len(pos_scores), 6)
+                return results
 
 
         class CrispAlphaResize:
@@ -523,8 +677,21 @@ enum TrainingScriptGenerator {
                 brightness=0.3, contrast=0.3, saturation=0.2, grayscale_p=0.1,
             )
 
-            # When using native resolution, skip resizing - pieces are already at their native size
-            if USE_NATIVE_RESOLUTION:
+            # Build transforms based on mode
+            if USE_SEAM_ONLY:
+                # Seam mode: seam strips resized to square
+                base_transform = transforms.Compose([
+                    CrispAlphaResize(SEAM_WIDTH),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+                ])
+                eval_transform = transforms.Compose([
+                    CrispAlphaResize(SEAM_WIDTH),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+                ])
+                seam_cropper = SeamCropper(SEAM_WIDTH)
+            elif USE_NATIVE_RESOLUTION:
                 base_transform = transforms.Compose([
                     transforms.ToTensor(),
                     transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
@@ -533,6 +700,7 @@ enum TrainingScriptGenerator {
                     transforms.ToTensor(),
                     transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
                 ])
+                seam_cropper = None
             else:
                 base_transform = transforms.Compose([
                     CrispAlphaResize(INPUT_SIZE),
@@ -544,13 +712,21 @@ enum TrainingScriptGenerator {
                     transforms.ToTensor(),
                     transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
                 ])
+                seam_cropper = None
 
             # Load datasets
             train_dataset = JigsawPairDataset(
                 os.path.join(DATASET_PATH, "train"), base_transform, pair_augment,
+                seam_cropper=seam_cropper,
             )
-            valid_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "valid"), eval_transform)
-            test_dataset = JigsawPairDataset(os.path.join(DATASET_PATH, "test"), eval_transform)
+            valid_dataset = JigsawPairDataset(
+                os.path.join(DATASET_PATH, "valid"), eval_transform,
+                seam_cropper=seam_cropper,
+            )
+            test_dataset = JigsawPairDataset(
+                os.path.join(DATASET_PATH, "test"), eval_transform,
+                seam_cropper=seam_cropper,
+            )
 
             print(f"Train: {len(train_dataset)} pairs")
             print(f"Valid: {len(valid_dataset)} pairs")
@@ -583,9 +759,13 @@ enum TrainingScriptGenerator {
 
             # Model
             model = SiameseNetwork().to(DEVICE)
-            # Weight positive class to compensate for 1:3 imbalance (25% match, 75% non-match)
-            pos_weight = torch.tensor([3.0], device=DEVICE)
-            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            if USE_FOUR_CLASS:
+                # Weight class 0 (correct) higher to compensate for 1:3 imbalance
+                class_weights = torch.tensor([3.0, 1.0, 1.0, 1.0], device=DEVICE)
+                criterion = nn.CrossEntropyLoss(weight=class_weights)
+            else:
+                pos_weight = torch.tensor([3.0], device=DEVICE)
+                criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
             optimiser = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 optimiser, mode="min", factor=0.5, patience=10
@@ -659,7 +839,7 @@ enum TrainingScriptGenerator {
             )
 
             # Detailed test: confusion matrix + per-category breakdown
-            confusion_matrix, per_category = run_detailed_test(
+            confusion_matrix, per_category, four_class_metrics = run_detailed_test(
                 model, test_dataset, criterion, threshold=opt_threshold
             )
 
@@ -689,9 +869,19 @@ enum TrainingScriptGenerator {
                         f"F1={r['f1']:.3f} (t={r['threshold']:.2f})"
                     )
 
+            # 4-class metrics
+            if four_class_metrics is not None:
+                print(f"\\n4-Class Metrics:")
+                print(f"  Overall accuracy: {four_class_metrics['accuracy']:.4f}")
+                for cat_name, cat_acc in four_class_metrics['perClassAccuracy'].items():
+                    print(f"  {cat_name}: {cat_acc:.4f}")
+
             # Ranking metrics
             ranking = compute_ranking_metrics(model, test_dataset)
-            print(f"\\nRanking metrics:")
+            edge_info_str = ""
+            if "edgeQueryCount" in ranking:
+                edge_info_str = f" ({ranking['edgeQueryCount']} edges, avg {ranking.get('avgPoolSize', 0):.1f} candidates)"
+            print(f"\\nRanking metrics{edge_info_str}:")
             print(f"  R@1: {ranking['recallAt1']:.4f}  R@5: {ranking['recallAt5']:.4f}  R@10: {ranking['recallAt10']:.4f}")
 
             # Save metrics
@@ -710,9 +900,11 @@ enum TrainingScriptGenerator {
             metrics["trainingRunInfo"] = {
                 "batchSizeUsed": BATCH_SIZE,
                 "ampEnabled": use_amp,
-                "inputSizeUsed": INPUT_SIZE,
+                "inputSizeUsed": SEAM_WIDTH if USE_SEAM_ONLY else INPUT_SIZE,
                 "pairsPerSecond": round(last_pairs_per_sec, 2),
             }
+            if four_class_metrics is not None:
+                metrics["fourClassMetrics"] = four_class_metrics
 
             with open("metrics.json", "w") as f:
                 json.dump(metrics, f, indent=2)
@@ -723,15 +915,16 @@ enum TrainingScriptGenerator {
                 import coremltools as ct
 
                 model.cpu()
-                example_left = torch.randn(1, 4, INPUT_SIZE, INPUT_SIZE)
-                example_right = torch.randn(1, 4, INPUT_SIZE, INPUT_SIZE)
+                trace_size = SEAM_WIDTH if USE_SEAM_ONLY else INPUT_SIZE
+                example_left = torch.randn(1, 4, trace_size, trace_size)
+                example_right = torch.randn(1, 4, trace_size, trace_size)
                 traced = torch.jit.trace(model, (example_left, example_right))
 
                 ml_model = ct.convert(
                     traced,
                     inputs=[
-                        ct.TensorType(name="left", shape=(1, 4, INPUT_SIZE, INPUT_SIZE)),
-                        ct.TensorType(name="right", shape=(1, 4, INPUT_SIZE, INPUT_SIZE)),
+                        ct.TensorType(name="left", shape=(1, 4, trace_size, trace_size)),
+                        ct.TensorType(name="right", shape=(1, 4, trace_size, trace_size)),
                     ],
                 )
                 ml_model.save("model.mlpackage")
@@ -843,24 +1036,24 @@ enum TrainingScriptGenerator {
         switch method {
         case .l1Distance, .l2Distance:
             return """
-                    # Classification head (outputs raw logits for BCEWithLogitsLoss)
+                    # Classification head (NUM_CLASSES=4 for 4-class, 1 for binary)
                     self.classifier = nn.Sequential(
                         nn.Linear(EMBEDDING_DIM, 64),
                         nn.ReLU(),
                         nn.Dropout(DROPOUT),
-                        nn.Linear(64, 1),
+                        nn.Linear(64, NUM_CLASSES),
                     )
             """
         case .concatenation:
             return """
-                    # Classification head (outputs raw logits for BCEWithLogitsLoss)
+                    # Classification head (NUM_CLASSES=4 for 4-class, 1 for binary)
                     self.classifier = nn.Sequential(
                         nn.Linear(EMBEDDING_DIM * 2, 128),
                         nn.ReLU(),
                         nn.Dropout(DROPOUT),
                         nn.Linear(128, 64),
                         nn.ReLU(),
-                        nn.Linear(64, 1),
+                        nn.Linear(64, NUM_CLASSES),
                     )
             """
         }

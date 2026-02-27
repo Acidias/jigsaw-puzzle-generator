@@ -77,6 +77,9 @@ struct SiameseArchitecture: Codable, Equatable {
     var devicePreference: DevicePreference
     var useNativeResolution: Bool
     var useMixedPrecision: Bool
+    var useFourClass: Bool
+    var useSeamOnly: Bool
+    var seamWidth: Int
 
     /// AdaptiveAvgPool2d reduces spatial dims to a fixed 4x4 grid before the
     /// embedding head, making flattened size independent of input resolution.
@@ -98,7 +101,10 @@ struct SiameseArchitecture: Codable, Equatable {
         inputSize: Int = 392,
         devicePreference: DevicePreference = .auto,
         useNativeResolution: Bool = false,
-        useMixedPrecision: Bool = false
+        useMixedPrecision: Bool = false,
+        useFourClass: Bool = false,
+        useSeamOnly: Bool = false,
+        seamWidth: Int = 32
     ) {
         self.convBlocks = convBlocks ?? [
             ConvBlock(filters: 32, kernelSize: 3, useBatchNorm: true, useMaxPool: true),
@@ -115,6 +121,9 @@ struct SiameseArchitecture: Codable, Equatable {
         self.devicePreference = devicePreference
         self.useNativeResolution = useNativeResolution
         self.useMixedPrecision = useMixedPrecision
+        self.useFourClass = useFourClass
+        self.useSeamOnly = useSeamOnly
+        self.seamWidth = seamWidth
     }
 
     /// Custom decoder for backwards compatibility with manifests that lack newer fields.
@@ -131,5 +140,8 @@ struct SiameseArchitecture: Codable, Equatable {
         devicePreference = try container.decodeIfPresent(DevicePreference.self, forKey: .devicePreference) ?? .auto
         useNativeResolution = try container.decodeIfPresent(Bool.self, forKey: .useNativeResolution) ?? false
         useMixedPrecision = try container.decodeIfPresent(Bool.self, forKey: .useMixedPrecision) ?? false
+        useFourClass = try container.decodeIfPresent(Bool.self, forKey: .useFourClass) ?? false
+        useSeamOnly = try container.decodeIfPresent(Bool.self, forKey: .useSeamOnly) ?? false
+        seamWidth = try container.decodeIfPresent(Int.self, forKey: .seamWidth) ?? 32
     }
 }

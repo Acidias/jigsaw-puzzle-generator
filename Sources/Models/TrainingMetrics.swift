@@ -103,6 +103,33 @@ struct RankingMetrics: Codable, Equatable {
     let recallAt1: Double
     let recallAt5: Double
     let recallAt10: Double
+    let edgeQueryCount: Int?    // number of edge groups assessed (per-edge ranking)
+    let avgPoolSize: Double?    // average candidates per edge group
+
+    init(recallAt1: Double, recallAt5: Double, recallAt10: Double,
+         edgeQueryCount: Int? = nil, avgPoolSize: Double? = nil) {
+        self.recallAt1 = recallAt1
+        self.recallAt5 = recallAt5
+        self.recallAt10 = recallAt10
+        self.edgeQueryCount = edgeQueryCount
+        self.avgPoolSize = avgPoolSize
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        recallAt1 = try container.decode(Double.self, forKey: .recallAt1)
+        recallAt5 = try container.decode(Double.self, forKey: .recallAt5)
+        recallAt10 = try container.decode(Double.self, forKey: .recallAt10)
+        edgeQueryCount = try container.decodeIfPresent(Int.self, forKey: .edgeQueryCount)
+        avgPoolSize = try container.decodeIfPresent(Double.self, forKey: .avgPoolSize)
+    }
+}
+
+/// 4-class classification metrics (correct/wrongShape/wrongImage/wrongNothing).
+struct FourClassMetrics: Codable, Equatable {
+    let accuracy: Double
+    let perClassAccuracy: [String: Double]
+    let confusionMatrix4x4: [[Int]]     // 4x4 matrix, rows=true, cols=predicted
 }
 
 /// Information about the training run for performance comparison.
@@ -134,6 +161,7 @@ struct TrainingMetrics: Codable, Equatable {
     var standardisedResults: [StandardisedResult]?
     var rankingMetrics: RankingMetrics?
     var trainingRunInfo: TrainingRunInfo?
+    var fourClassMetrics: FourClassMetrics?
 
     init(
         trainLoss: [MetricPoint] = [],
@@ -152,7 +180,8 @@ struct TrainingMetrics: Codable, Equatable {
         optimalThreshold: Double? = nil,
         standardisedResults: [StandardisedResult]? = nil,
         rankingMetrics: RankingMetrics? = nil,
-        trainingRunInfo: TrainingRunInfo? = nil
+        trainingRunInfo: TrainingRunInfo? = nil,
+        fourClassMetrics: FourClassMetrics? = nil
     ) {
         self.trainLoss = trainLoss
         self.validLoss = validLoss
@@ -171,5 +200,6 @@ struct TrainingMetrics: Codable, Equatable {
         self.standardisedResults = standardisedResults
         self.rankingMetrics = rankingMetrics
         self.trainingRunInfo = trainingRunInfo
+        self.fourClassMetrics = fourClassMetrics
     }
 }
