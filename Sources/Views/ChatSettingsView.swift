@@ -33,6 +33,77 @@ struct ChatSettingsView: View {
 
             Divider()
 
+            // Claude OAuth section
+            if chatState.provider == .claude {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Claude Account")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    if let email = chatState.claudeOAuthEmail, ChatCredentialStore.isClaudeOAuthActive {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Signed in as \(email)")
+                                .font(.caption)
+                                .lineLimit(1)
+                            Spacer()
+                            Button("Sign out") {
+                                ClaudeOAuthService.signOut()
+                                chatState.claudeOAuthEmail = nil
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red)
+                        }
+                    } else {
+                        Button {
+                            chatState.isOAuthSigningIn = true
+                            Task {
+                                do {
+                                    let email = try await ClaudeOAuthService.authenticate()
+                                    chatState.claudeOAuthEmail = email
+                                } catch is CancellationError {
+                                    // User cancelled - ignore
+                                } catch ClaudeOAuthService.OAuthError.cancelled {
+                                    // User closed window - ignore
+                                } catch {
+                                    chatState.error = error.localizedDescription
+                                }
+                                chatState.isOAuthSigningIn = false
+                            }
+                        } label: {
+                            HStack {
+                                if chatState.isOAuthSigningIn {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Signing in...")
+                                } else {
+                                    Image(systemName: "person.circle")
+                                    Text("Sign in with Claude")
+                                }
+                            }
+                        }
+                        .disabled(chatState.isOAuthSigningIn)
+
+                        Text("Use your Pro or Max plan's usage allowance")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundStyle(.quaternary)
+                        Text("or")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundStyle(.quaternary)
+                    }
+                }
+            }
+
             // API Keys
             VStack(alignment: .leading, spacing: 8) {
                 Text("API Keys")
@@ -64,7 +135,7 @@ struct ChatSettingsView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text("No API key set for \(chatState.provider.rawValue)")
+                    Text("No API key or account set for \(chatState.provider.rawValue)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

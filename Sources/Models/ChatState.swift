@@ -41,6 +41,8 @@ enum ChatCredentialStore {
     private static let providerKey = "ai_chat_provider"
     private static let modelIDKey = "ai_chat_model_id"
     private static let showRawConversationKey = "ai_chat_show_raw_conversation"
+    private static let claudeOAuthTokensKey = "ai_chat_claude_oauth_tokens"
+    private static let claudeOAuthEmailKey = "ai_chat_claude_oauth_email"
 
     static var claudeAPIKey: String {
         get { UserDefaults.standard.string(forKey: claudeKeyKey) ?? "" }
@@ -69,6 +71,39 @@ enum ChatCredentialStore {
     static var showRawConversation: Bool {
         get { UserDefaults.standard.bool(forKey: showRawConversationKey) }
         set { UserDefaults.standard.set(newValue, forKey: showRawConversationKey) }
+    }
+
+    // MARK: - OAuth Tokens
+
+    static var claudeOAuthTokens: OAuthTokens? {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: claudeOAuthTokensKey) else { return nil }
+            return try? JSONDecoder().decode(OAuthTokens.self, from: data)
+        }
+        set {
+            if let tokens = newValue,
+               let data = try? JSONEncoder().encode(tokens) {
+                UserDefaults.standard.set(data, forKey: claudeOAuthTokensKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: claudeOAuthTokensKey)
+            }
+        }
+    }
+
+    static var claudeOAuthEmail: String? {
+        get { UserDefaults.standard.string(forKey: claudeOAuthEmailKey) }
+        set {
+            if let email = newValue {
+                UserDefaults.standard.set(email, forKey: claudeOAuthEmailKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: claudeOAuthEmailKey)
+            }
+        }
+    }
+
+    /// Whether Claude OAuth tokens exist (may still need refresh).
+    static var isClaudeOAuthActive: Bool {
+        claudeOAuthTokens != nil
     }
 
     static func apiKey(for provider: LLMProvider) -> String {
@@ -182,6 +217,8 @@ class ChatState: ObservableObject {
     @Published var selectedModelID: String
     @Published var error: String?
     @Published var showRawConversation: Bool
+    @Published var claudeOAuthEmail: String?
+    @Published var isOAuthSigningIn: Bool = false
 
     var selectedModel: LLMModel {
         LLMModels.all.first { $0.id == selectedModelID }
@@ -189,7 +226,12 @@ class ChatState: ObservableObject {
     }
 
     var hasAPIKey: Bool {
-        !ChatCredentialStore.apiKey(for: provider).isEmpty
+        switch provider {
+        case .claude:
+            return ChatCredentialStore.isClaudeOAuthActive || !ChatCredentialStore.claudeAPIKey.isEmpty
+        case .openAI:
+            return !ChatCredentialStore.openAIAPIKey.isEmpty
+        }
     }
 
     init() {
@@ -202,6 +244,7 @@ class ChatState: ObservableObject {
             self.selectedModelID = LLMModels.defaultModel(for: savedProvider).id
         }
         self.showRawConversation = ChatCredentialStore.showRawConversation
+        self.claudeOAuthEmail = ChatCredentialStore.claudeOAuthEmail
     }
 
     func setProvider(_ newProvider: LLMProvider) {
