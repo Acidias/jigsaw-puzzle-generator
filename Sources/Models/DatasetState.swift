@@ -51,6 +51,8 @@ struct DatasetPair {
     let right: DatasetPiece
     let category: DatasetCategory
     let pairID: Int
+    let direction: String       // "R" (horizontal/right) or "D" (vertical/down)
+    let leftEdgeIndex: Int      // clockwise from top: 0=top, 1=right, 2=bottom, 3=left
 }
 
 /// Configuration for dataset generation.

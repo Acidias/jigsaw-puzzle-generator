@@ -392,6 +392,8 @@ struct ModelTrainingPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text("Status")
                         .frame(width: 70)
+                    Text("Mode")
+                        .frame(width: 65)
                     Text("Dataset")
                         .frame(width: 100)
                     Text("Preset")
@@ -402,8 +404,12 @@ struct ModelTrainingPanel: View {
                         .frame(width: 55)
                     Text("F1")
                         .frame(width: 50)
+                    Text("R@P60")
+                        .frame(width: 55)
                     Text("R@P70")
                         .frame(width: 55)
+                    Text("R@1")
+                        .frame(width: 50)
                     Text("Duration")
                         .frame(width: 65)
                     Text("Script")
@@ -439,6 +445,13 @@ struct ModelTrainingPanel: View {
         let arch = model.architecture
         let archSummary = "\(arch.convBlocks.count)blk \(arch.embeddingDimension)-d \(arch.comparisonMethod.shortName)"
 
+        let modeText: String = {
+            var parts: [String] = []
+            if arch.useFourClass { parts.append("4C") }
+            if arch.useSeamOnly { parts.append("Seam") }
+            return parts.isEmpty ? "-" : parts.joined(separator: "+")
+        }()
+
         let accText: String = {
             if let acc = model.metrics?.testAccuracy {
                 return String(format: "%.1f%%", acc * 100)
@@ -453,10 +466,27 @@ struct ModelTrainingPanel: View {
             return "-"
         }()
 
+        let recallAtP60Text: String = {
+            if let std = model.metrics?.standardisedResults,
+               let r = std.first(where: { $0.precisionTarget == 60 }),
+               r.status == "achieved", let recall = r.recall {
+                return String(format: "%.3f", recall)
+            }
+            return "-"
+        }()
+
         let recallAtP70Text: String = {
             if let std = model.metrics?.standardisedResults,
-               let r = std.first(where: { $0.precisionTarget == 0.7 }) {
-                return String(format: "%.3f", r.recall)
+               let r = std.first(where: { $0.precisionTarget == 70 }),
+               r.status == "achieved", let recall = r.recall {
+                return String(format: "%.3f", recall)
+            }
+            return "-"
+        }()
+
+        let recallAt1Text: String = {
+            if let r1 = model.metrics?.rankingMetrics?.recallAt1 {
+                return String(format: "%.3f", r1)
             }
             return "-"
         }()
@@ -488,6 +518,9 @@ struct ModelTrainingPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             comparisonStatusText(model.status)
                 .frame(width: 70)
+            Text(modeText)
+                .foregroundStyle(modeText != "-" ? .cyan : .primary)
+                .frame(width: 65)
             Text(model.sourceDatasetName)
                 .lineLimit(1)
                 .frame(width: 100)
@@ -501,9 +534,15 @@ struct ModelTrainingPanel: View {
                 .frame(width: 55)
             Text(f1Text)
                 .frame(width: 50)
+            Text(recallAtP60Text)
+                .foregroundStyle(recallAtP60Text != "-" ? .orange : .primary)
+                .frame(width: 55)
             Text(recallAtP70Text)
                 .foregroundStyle(recallAtP70Text != "-" ? .orange : .primary)
                 .frame(width: 55)
+            Text(recallAt1Text)
+                .foregroundStyle(recallAt1Text != "-" ? .purple : .primary)
+                .frame(width: 50)
             Text(durationText)
                 .frame(width: 65)
             Text(scriptText)
