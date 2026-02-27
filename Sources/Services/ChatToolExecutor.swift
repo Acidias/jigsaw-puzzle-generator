@@ -16,7 +16,8 @@ enum ChatToolExecutor {
         arguments: String,
         modelState: ModelState,
         datasetState: DatasetState,
-        appState: AppState
+        appState: AppState,
+        autoMLState: AutoMLState? = nil
     ) async -> (String, [ToolResultImage]) {
         let args = parseArguments(arguments)
 
@@ -130,7 +131,7 @@ enum ChatToolExecutor {
             guard let modelID = args["model_id"] as? String else {
                 return (errorResult("Missing required parameter: model_id"), [])
             }
-            return (startTraining(modelID: modelID, modelState: modelState, datasetState: datasetState), [])
+            return (startTraining(modelID: modelID, modelState: modelState, datasetState: datasetState, autoMLState: autoMLState), [])
 
         default:
             return (errorResult("Unknown tool: \(toolName)"), [])
@@ -517,7 +518,8 @@ enum ChatToolExecutor {
     private static func startTraining(
         modelID: String,
         modelState: ModelState,
-        datasetState: DatasetState
+        datasetState: DatasetState,
+        autoMLState: AutoMLState?
     ) -> String {
         guard let uuid = UUID(uuidString: modelID),
               let model = modelState.models.first(where: { $0.id == uuid }) else {
@@ -530,6 +532,10 @@ enum ChatToolExecutor {
 
         guard !modelState.isTraining else {
             return errorResult("Another training session is already in progress.")
+        }
+
+        if let autoMLState = autoMLState, autoMLState.isRunning {
+            return errorResult("An AutoML study is currently running. Wait for it to finish before starting training.")
         }
 
         guard TrainingRunner.findPython() != nil else {

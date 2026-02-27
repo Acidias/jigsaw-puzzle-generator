@@ -13,7 +13,7 @@ enum CloudTrainingRunner {
 
     // MARK: - SSH/SCP Flag Builders
 
-    private static func sshFlags(_ config: CloudConfig) -> [String] {
+    static func sshFlags(_ config: CloudConfig) -> [String] {
         [
             "-i", config.resolvedKeyPath,
             "-p", "\(config.port)",
@@ -22,7 +22,7 @@ enum CloudTrainingRunner {
         ]
     }
 
-    private static func scpFlags(_ config: CloudConfig) -> [String] {
+    static func scpFlags(_ config: CloudConfig) -> [String] {
         [
             "-i", config.resolvedKeyPath,
             "-P", "\(config.port)",

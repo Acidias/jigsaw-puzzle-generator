@@ -8,6 +8,8 @@ enum SidebarItem: Hashable {
     case dataset(UUID)
     case architecturePresets
     case preset(UUID)
+    case autoML
+    case study(UUID)
     case modelTraining
     case model(UUID)
     case project(UUID)
@@ -20,6 +22,7 @@ struct SidebarView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var datasetState: DatasetState
     @ObservedObject var modelState: ModelState
+    @ObservedObject var autoMLState: AutoMLState
     @Binding var selection: SidebarItem?
 
     var body: some View {
@@ -112,6 +115,40 @@ struct SidebarView: View {
                     }
                 }
 
+                Label("AutoML", systemImage: "wand.and.stars")
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .tag(SidebarItem.autoML)
+
+                ForEach(autoMLState.studies.sorted { $0.createdAt > $1.createdAt }) { study in
+                    HStack(spacing: 6) {
+                        Image(systemName: studyStatusIcon(study.status))
+                            .font(.caption)
+                            .foregroundStyle(studyStatusColour(study.status))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(study.name)
+                                .font(.callout)
+                                .lineLimit(1)
+                            Text("\(study.completedTrials)/\(study.configuration.numTrials) trials")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tag(SidebarItem.study(study.id))
+                    .contextMenu {
+                        Button("Rename...") {
+                            promptRenameStudy(study)
+                        }
+                        Divider()
+                        Button("Delete") {
+                            autoMLState.deleteStudy(study)
+                            if case .study(study.id) = selection {
+                                selection = .autoML
+                            }
+                        }
+                    }
+                }
+
                 Label("Model Training", systemImage: "network")
                     .font(.body)
                     .fontWeight(.semibold)
@@ -161,7 +198,7 @@ struct SidebarView: View {
 
     private func handleSelection(_ item: SidebarItem?) {
         switch item {
-        case .batchLocal, .batchOpenverse, .aiChat, .datasetGeneration, .dataset, .architecturePresets, .preset, .modelTraining, .model:
+        case .batchLocal, .batchOpenverse, .aiChat, .datasetGeneration, .dataset, .architecturePresets, .preset, .autoML, .study, .modelTraining, .model:
             appState.selectedProjectID = nil
             appState.selectedCutID = nil
             appState.selectedCutImageID = nil
@@ -412,6 +449,46 @@ struct SidebarView: View {
             alert.messageText = "Export Failed"
             alert.informativeText = error.localizedDescription
             alert.runModal()
+        }
+    }
+
+    private func studyStatusIcon(_ status: StudyStatus) -> String {
+        switch status {
+        case .configured: return "circle.dashed"
+        case .running: return "play.circle.fill"
+        case .completed: return "checkmark.circle.fill"
+        case .cancelled: return "pause.circle"
+        case .failed: return "xmark.circle.fill"
+        }
+    }
+
+    private func studyStatusColour(_ status: StudyStatus) -> Color {
+        switch status {
+        case .configured: return .blue
+        case .running: return .orange
+        case .completed: return .green
+        case .cancelled: return .yellow
+        case .failed: return .red
+        }
+    }
+
+    private func promptRenameStudy(_ study: AutoMLStudy) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Study"
+        alert.informativeText = "Enter a new name for the study."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        textField.stringValue = study.name
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                study.name = newName
+                AutoMLStudyStore.saveStudy(study)
+            }
         }
     }
 
