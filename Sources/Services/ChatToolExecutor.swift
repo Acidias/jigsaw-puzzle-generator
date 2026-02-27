@@ -7,9 +7,9 @@ import Foundation
 @MainActor
 enum ChatToolExecutor {
 
-    /// Cache of Openverse search results keyed by image URL.
-    /// Populated by search_openverse, consumed by download_images for attribution lookup.
-    nonisolated(unsafe) private static var openverseCache: [String: OpenverseImage] = [:]
+    /// Cache of the most recent Openverse search results (ordered).
+    /// Populated by search_openverse, consumed by download_images.
+    nonisolated(unsafe) private static var openverseCache: [OpenverseImage] = []
 
     static func execute(
         toolName: String,
@@ -92,10 +92,8 @@ enum ChatToolExecutor {
             guard let projectID = args["project_id"] as? String else {
                 return (errorResult("Missing required parameter: project_id"), [])
             }
-            guard let urls = args["urls"] as? [String] else {
-                return (errorResult("Missing required parameter: urls"), [])
-            }
-            return (await downloadImages(projectID: projectID, urls: urls, appState: appState), [])
+            let count = args["count"] as? Int
+            return (await downloadImages(projectID: projectID, count: count, appState: appState), [])
         case "generate_dataset":
             guard let projectID = args["project_id"] as? String else {
                 return (errorResult("Missing required parameter: project_id"), [])
@@ -221,25 +219,23 @@ enum ChatToolExecutor {
         do {
             let response = try await OpenverseAPI.search(params: params)
 
-            // Cache all results for download_images attribution lookup
-            for image in response.results {
-                openverseCache[image.url] = image
+            // Cache all results for download_images to consume
+            openverseCache = response.results
+
+            // Return just a summary - the LLM doesn't need individual image details
+            var result: [String: Any] = [
+                "total_results_available": response.resultCount,
+                "cached_for_download": response.results.count,
+                "note": "Use download_images with a project_id to download these into a project.",
+            ]
+
+            // Include a few sample titles so the LLM knows what was found
+            let sampleTitles = response.results.prefix(5).compactMap { $0.title }
+            if !sampleTitles.isEmpty {
+                result["sample_titles"] = sampleTitles
             }
 
-            // Return compact list: just url + title (LLM needs URLs for download_images)
-            // Full metadata (creator, licence, dimensions) is preserved in the cache
-            let urls = response.results.map { img -> [String: Any] in
-                var info: [String: Any] = ["url": img.url]
-                if let title = img.title { info["title"] = title }
-                return info
-            }
-
-            return jsonString([
-                "result_count": response.resultCount,
-                "returned": urls.count,
-                "images": urls,
-                "note": "All results cached with full attribution. Pass URLs to download_images to add to a project.",
-            ] as [String: Any])
+            return jsonString(result)
         } catch {
             return errorResult("Openverse search failed: \(error.localizedDescription)")
         }
@@ -247,7 +243,7 @@ enum ChatToolExecutor {
 
     private static func downloadImages(
         projectID: String,
-        urls: [String],
+        count: Int?,
         appState: AppState
     ) async -> String {
         guard let projectUUID = UUID(uuidString: projectID),
@@ -255,25 +251,23 @@ enum ChatToolExecutor {
             return errorResult("Project not found with ID: \(projectID)")
         }
 
-        guard !urls.isEmpty else {
-            return errorResult("No URLs provided.")
+        guard !openverseCache.isEmpty else {
+            return errorResult("No cached search results. Call search_openverse first.")
         }
 
+        let imagesToDownload = count.map { Array(openverseCache.prefix($0)) } ?? openverseCache
         var downloaded = 0
         var failed = 0
-        var results: [[String: Any]] = []
 
-        for urlString in urls {
+        for cachedImage in imagesToDownload {
             do {
-                let (nsImage, tempURL) = try await OpenverseAPI.downloadImage(from: urlString)
+                let (nsImage, tempURL) = try await OpenverseAPI.downloadImage(from: cachedImage.url)
 
-                // Determine name from cache or URL filename
-                let cachedImage = openverseCache[urlString]
                 let name: String
-                if let title = cachedImage?.title, !title.trimmingCharacters(in: .whitespaces).isEmpty {
+                if let title = cachedImage.title, !title.trimmingCharacters(in: .whitespaces).isEmpty {
                     name = title
                 } else {
-                    name = URL(string: urlString)?.deletingPathExtension().lastPathComponent ?? "image_\(downloaded + 1)"
+                    name = URL(string: cachedImage.url)?.deletingPathExtension().lastPathComponent ?? "image_\(downloaded + 1)"
                 }
 
                 let puzzleImage = PuzzleImage(
@@ -281,29 +275,15 @@ enum ChatToolExecutor {
                     sourceImage: nsImage,
                     sourceImageURL: tempURL
                 )
-
-                // Attach attribution from cache if available
-                if let cachedImage = cachedImage {
-                    puzzleImage.attribution = cachedImage.toAttribution()
-                }
+                puzzleImage.attribution = cachedImage.toAttribution()
 
                 appState.addImage(puzzleImage, to: project)
                 ProjectStore.copySourceImage(puzzleImage, to: project)
                 appState.saveProject(project)
 
                 downloaded += 1
-                results.append([
-                    "url": urlString,
-                    "status": "ok",
-                    "name": name,
-                ])
             } catch {
                 failed += 1
-                results.append([
-                    "url": urlString,
-                    "status": "failed",
-                    "error": error.localizedDescription,
-                ])
             }
         }
 
@@ -311,7 +291,7 @@ enum ChatToolExecutor {
             "project": project.name,
             "downloaded": downloaded,
             "failed": failed,
-            "results": results,
+            "total_images_in_project": project.images.count,
         ] as [String: Any])
     }
 

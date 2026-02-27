@@ -191,7 +191,7 @@ enum ChatTools {
         ),
         ChatToolDefinition(
             name: "search_openverse",
-            description: "Search Openverse for Creative Commons images. Results are cached so download_images can look up attribution. Note: anonymous rate limit is 100 requests/day, 5/hour.",
+            description: "Search Openverse for Creative Commons images. Results are cached internally for download_images. Returns a count and summary - not individual image details. Note: anonymous rate limit is 100 requests/day, 5/hour.",
             parameters: [
                 ChatToolParam(name: "query", description: "Search query (e.g. 'ocean photographs', 'forest landscape')"),
                 ChatToolParam(name: "size", description: "Image size filter: small, medium, or large", isRequired: false),
@@ -202,10 +202,10 @@ enum ChatTools {
         ),
         ChatToolDefinition(
             name: "download_images",
-            description: "Download images into a project by URL. If the URL was returned by search_openverse, attribution is automatically attached. Downloads are sequential (typically 1-2s per image).",
+            description: "Download images from the most recent search_openverse results into a project. Attribution is automatically attached. Downloads are sequential (typically 1-2s per image).",
             parameters: [
                 ChatToolParam(name: "project_id", description: "The UUID of the project to add images to"),
-                ChatToolParam(name: "urls", type: "array", description: "Array of image URLs to download", itemType: "string"),
+                ChatToolParam(name: "count", type: "integer", description: "Number of images to download from the cached search results (default: all)", isRequired: false),
             ]
         ),
         ChatToolDefinition(
